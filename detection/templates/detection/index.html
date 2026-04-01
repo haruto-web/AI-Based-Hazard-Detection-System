@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Hazard Detection System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        #camera { transform: scaleX(-1); }
+        .spinner { border: 4px solid #e5e7eb; border-top-color: #f59e0b; border-radius: 50%; width: 40px; height: 40px; animation: spin .8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen">
+
+    <!-- Header -->
+    <header class="bg-gray-800 border-b border-gray-700 py-6 text-center">
+        <h1 class="text-3xl font-bold text-amber-400">🏗️ AI-Based Hazard Detection</h1>
+        <p class="text-gray-400 mt-1">Construction Site Safety System</p>
+    </header>
+
+    <main class="max-w-3xl mx-auto px-4 py-8 space-y-8">
+
+        <!-- Capture / Upload -->
+        <section class="bg-gray-800 rounded-2xl p-6 shadow-lg">
+            <h2 class="text-xl font-semibold mb-4">Capture or Upload Image</h2>
+
+            <div id="camera-container" class="relative rounded-xl overflow-hidden bg-black aspect-video flex items-center justify-center text-gray-500 mb-4">
+                <video id="camera" autoplay playsinline class="w-full h-full object-cover hidden"></video>
+                <canvas id="canvas" class="hidden"></canvas>
+                <span id="camera-placeholder">Camera preview will appear here</span>
+            </div>
+
+            <div class="flex flex-wrap gap-3">
+                <button id="btn-start" onclick="startCamera()" class="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-gray-900 font-medium rounded-lg transition">📷 Start Camera</button>
+                <button id="btn-capture" onclick="capturePhoto()" disabled class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-lg transition disabled:opacity-40">📸 Capture</button>
+                <label class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 rounded-lg transition cursor-pointer">
+                    📁 Upload
+                    <input type="file" id="file-input" accept="image/*" onchange="handleFile(event)" class="hidden">
+                </label>
+            </div>
+
+            <!-- Preview -->
+            <div id="preview-wrap" class="mt-5 hidden">
+                <img id="preview" class="rounded-xl max-h-72 mx-auto" alt="Preview">
+                <button onclick="analyzeImage()" class="mt-4 w-full py-3 bg-amber-500 hover:bg-amber-600 text-gray-900 font-bold rounded-lg text-lg transition">🔍 Analyze for Hazards</button>
+            </div>
+        </section>
+
+        <!-- Loading -->
+        <div id="loading" class="hidden flex flex-col items-center gap-3 py-8">
+            <div class="spinner"></div>
+            <p class="text-gray-400">Analyzing image for hazards…</p>
+        </div>
+
+        <!-- Results -->
+        <section id="results" class="bg-gray-800 rounded-2xl p-6 shadow-lg hidden">
+            <h2 class="text-xl font-semibold mb-4">Analysis Results</h2>
+            <div id="result-body"></div>
+        </section>
+
+        <!-- History -->
+        <section class="bg-gray-800 rounded-2xl p-6 shadow-lg">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-xl font-semibold">Recent Reports</h2>
+                <button onclick="loadHistory()" class="text-sm px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded-lg transition">🔄 Refresh</button>
+            </div>
+            <div id="history" class="space-y-4"></div>
+        </section>
+    </main>
+
+<script>
+let stream = null;
+let currentBlob = null;
+
+async function startCamera() {
+    try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        const video = document.getElementById("camera");
+        video.srcObject = stream;
+        video.classList.remove("hidden");
+        document.getElementById("camera-placeholder").classList.add("hidden");
+        document.getElementById("btn-capture").disabled = false;
+    } catch (e) {
+        alert("Camera access denied: " + e.message);
+    }
+}
+
+function capturePhoto() {
+    const video = document.getElementById("camera");
+    const canvas = document.getElementById("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext("2d").drawImage(video, 0, 0);
+    canvas.toBlob(blob => showPreview(blob), "image/jpeg", 0.85);
+}
+
+function handleFile(e) {
+    const file = e.target.files[0];
+    if (file) showPreview(file);
+}
+
+function showPreview(blob) {
+    currentBlob = blob;
+    const img = document.getElementById("preview");
+    img.src = URL.createObjectURL(blob);
+    document.getElementById("preview-wrap").classList.remove("hidden");
+}
+
+async function analyzeImage() {
+    if (!currentBlob) return;
+
+    document.getElementById("loading").classList.remove("hidden");
+    document.getElementById("results").classList.add("hidden");
+
+    const fd = new FormData();
+    fd.append("image", currentBlob, "capture.jpg");
+
+    try {
+        const res = await fetch("/api/analyze", { method: "POST", body: fd });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+        renderResult(data);
+        loadHistory();
+    } catch (e) {
+        alert("Analysis failed: " + e.message);
+    } finally {
+        document.getElementById("loading").classList.add("hidden");
+    }
+}
+
+function severityColor(s) {
+    return { LOW: "bg-green-600", MEDIUM: "bg-yellow-500 text-gray-900", HIGH: "bg-orange-600", CRITICAL: "bg-red-600" }[s] || "bg-gray-600";
+}
+
+function renderResult(d) {
+    const sec = document.getElementById("results");
+    sec.classList.remove("hidden");
+    document.getElementById("result-body").innerHTML = `
+        <span class="inline-block px-3 py-1 rounded-full text-sm font-bold ${severityColor(d.severity)}">${d.severity}</span>
+        <div class="mt-4 space-y-3">
+            <div>
+                <h3 class="text-amber-400 font-semibold">Hazards Found</h3>
+                <p class="text-gray-300 mt-1">${d.hazards_found}</p>
+            </div>
+            <div>
+                <h3 class="text-amber-400 font-semibold">Recommended Precautions</h3>
+                <p class="text-gray-300 mt-1">${d.precautions}</p>
+            </div>
+        </div>`;
+    sec.scrollIntoView({ behavior: "smooth" });
+}
+
+async function loadHistory() {
+    const el = document.getElementById("history");
+    try {
+        const res = await fetch("/api/records");
+        const data = await res.json();
+        if (!data.length) { el.innerHTML = '<p class="text-gray-500">No reports yet.</p>'; return; }
+        el.innerHTML = data.map(d => `
+            <div class="flex gap-4 bg-gray-700/50 rounded-xl p-3">
+                <img src="${d.image_url}" class="w-24 h-24 object-cover rounded-lg flex-shrink-0" alt="report">
+                <div class="min-w-0">
+                    <span class="inline-block px-2 py-0.5 rounded-full text-xs font-bold ${severityColor(d.severity)}">${d.severity}</span>
+                    <span class="text-xs text-gray-400 ml-2">${new Date(d.created_at).toLocaleString()}</span>
+                    <p class="text-sm text-gray-300 mt-1 line-clamp-2">${d.hazards_found}</p>
+                </div>
+            </div>`).join("");
+    } catch { el.innerHTML = '<p class="text-gray-500">Failed to load history.</p>'; }
+}
+
+loadHistory();
+</script>
+</body>
+</html>
