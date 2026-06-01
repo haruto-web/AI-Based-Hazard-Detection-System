@@ -1,0 +1,14 @@
+/* StreamGrid Styles */
+.stream-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  width: 100%;
+}
+
+/* Responsive: single column on mobile/tablet */
+@media (max-width: 768px) {
+  .stream-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,0 +1,58 @@
+.reports-placeholder {
+  background-color: #1a2332;
+  border: 1px solid #2d3a4a;
+  border-radius: 12px;
+  padding: 32px;
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+}
+
+.reports-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.reports-header h2 {
+  color: #e8eaed;
+  font-size: 1.5rem;
+  margin: 0;
+}
+
+.reports-header .badge.ongoing {
+  background-color: #00d4aa;
+  color: #0f1923;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.reports-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  text-align: center;
+}
+
+.reports-content .placeholder-icon {
+  font-size: 3rem;
+  margin-bottom: 16px;
+}
+
+.reports-content p {
+  color: #e8eaed;
+  font-size: 1rem;
+  margin: 0 0 8px 0;
+}
+
+.reports-content p.subtitle {
+  color: #8b95a5;
+  font-size: 0.875rem;
+}
