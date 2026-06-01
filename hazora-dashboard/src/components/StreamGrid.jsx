@@ -3,10 +3,11 @@ import '../styles/StreamGrid.css';
 
 const STREAM_COUNT = 5;
 
-export default function StreamGrid({ cameraIP, isConnecting, onStatusChange }) {
+export default function StreamGrid({ cameras, onCameraIPChange }) {
   const streams = Array.from({ length: STREAM_COUNT }, (_, i) => ({
     id: i + 1,
     label: `Stream ${i + 1}`,
+    cameraIP: cameras[i] || '',
   }));
 
   return (
@@ -14,10 +15,10 @@ export default function StreamGrid({ cameraIP, isConnecting, onStatusChange }) {
       {streams.map(stream => (
         <StreamBox
           key={stream.id}
-          cameraIP={cameraIP}
-          isConnecting={isConnecting}
+          id={stream.id}
           label={stream.label}
-          onStatusChange={onStatusChange}
+          cameraIP={stream.cameraIP}
+          onIPChange={onCameraIPChange}
         />
       ))}
     </div>

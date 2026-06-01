@@ -29,6 +29,15 @@
   letter-spacing: 1px;
 }
 
+.camera-count {
+  font-size: 0.7rem;
+  color: #00d4aa;
+  background: rgba(0, 212, 170, 0.1);
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
 .header-right {
   display: flex;
   align-items: center;
