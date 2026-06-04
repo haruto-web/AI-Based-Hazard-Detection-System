@@ -1,15 +1,15 @@
 import { useState } from 'react';
+import { useSites } from '../context/SiteContext';
 import '../styles/ReportsPage.css';
 
-const SITES = ['Main Site', 'Warehouse A', 'Warehouse B', 'Field Office'];
 const PAGE_SIZE = 20;
 
 export default function ReportsPage({ readOnly = false }) {
-  const [selectedSite, setSelectedSite] = useState('Main Site');
+  const { sites, activeSite, setActiveSite } = useSites();
   const [reports] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [showGenerateDialog, setShowGenerateDialog] = useState(false);
-  const [generateSite, setGenerateSite] = useState('Main Site');
+  const [generateSite, setGenerateSite] = useState(activeSite);
   const [generateRange, setGenerateRange] = useState('Last 7 Days');
 
   const totalPages = Math.ceil(reports.length / PAGE_SIZE) || 1;
@@ -42,14 +42,14 @@ export default function ReportsPage({ readOnly = false }) {
           <label htmlFor="site-select">Site Name:</label>
           <select
             id="site-select"
-            value={selectedSite}
+            value={activeSite}
             onChange={(e) => {
-              setSelectedSite(e.target.value);
+              setActiveSite(e.target.value);
               setCurrentPage(1);
             }}
           >
-            {SITES.map((site) => (
-              <option key={site} value={site}>{site}</option>
+            {sites.map((site) => (
+              <option key={site.id} value={site.name}>{site.name}</option>
             ))}
           </select>
         </div>
@@ -132,8 +132,8 @@ export default function ReportsPage({ readOnly = false }) {
                 value={generateSite}
                 onChange={(e) => setGenerateSite(e.target.value)}
               >
-                {SITES.map((site) => (
-                  <option key={site} value={site}>{site}</option>
+                {sites.map((site) => (
+                  <option key={site.id} value={site.name}>{site.name}</option>
                 ))}
               </select>
             </div>

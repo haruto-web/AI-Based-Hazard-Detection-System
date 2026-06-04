@@ -19,51 +19,72 @@ export const ROLE_ACCESS = {
     dashboard: 'view',
     streams: 'full',
     reports: 'view',
+    about: 'full',
     profile: 'full',
   },
   'Site Safety Practitioner': {
     dashboard: 'view',
     streams: 'full',
     reports: 'view',
+    about: 'full',
     profile: 'full',
   },
   'Site Project Engineer': {
     dashboard: 'view',
     streams: 'view',
     reports: 'none',
+    about: 'full',
     profile: 'full',
   },
   'Site Construction Manager': {
     dashboard: 'full',
     streams: 'full',
     reports: 'view',
+    about: 'full',
     profile: 'full',
   },
   'Safety Engineer - Head Office': {
     dashboard: 'full',
     streams: 'full',
     reports: 'full',
+    about: 'full',
     profile: 'full',
   },
   'Safety Manager - Head Office': {
     dashboard: 'full',
     streams: 'full',
     reports: 'full',
+    about: 'full',
     profile: 'full',
   },
   'HSE Head - Head Office': {
     dashboard: 'full',
     streams: 'full',
     reports: 'full',
+    about: 'full',
     profile: 'full',
   },
 };
+
+/**
+ * Check if a role can manage (add/remove) sites
+ * @param {string} role
+ * @returns {boolean}
+ */
+export function canManageSites(role) {
+  return [
+    'Safety Engineer - Head Office',
+    'Safety Manager - Head Office',
+    'HSE Head - Head Office',
+  ].includes(role);
+}
 
 // Default access for unknown roles (full access as fallback)
 const DEFAULT_ACCESS = {
   dashboard: 'full',
   streams: 'full',
   reports: 'full',
+  about: 'full',
   profile: 'full',
 };
 

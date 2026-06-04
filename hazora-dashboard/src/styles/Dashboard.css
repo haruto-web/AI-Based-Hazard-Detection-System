@@ -1,9 +1,10 @@
 /* Dashboard Styles */
 .dashboard {
-  min-height: 100vh;
+  height: 100vh;
   display: flex;
   flex-direction: column;
   background: var(--bg-primary);
+  overflow: hidden;
   transition: background 0.3s;
 }
 
@@ -16,6 +17,7 @@
   border-bottom: 1px solid var(--border);
   flex-wrap: wrap;
   gap: 0.75rem;
+  flex-shrink: 0;
   transition: background 0.3s;
 }
 
@@ -77,16 +79,24 @@
 
 .dashboard-content {
   flex: 1;
-  overflow-y: auto;
-  background: var(--bg-primary);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-primary);
+  margin-left: 250px;
   transition: background 0.3s;
 }
 
 .dashboard-content-inner {
   flex: 1;
   padding: 1.5rem;
+  overflow-y: auto;
+}
+
+.site-bar {
+  padding: 0.75rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
 }
 
 /* Streams View */
@@ -201,6 +211,10 @@
 
   .user-email {
     display: none;
+  }
+
+  .dashboard-content {
+    margin-left: 64px;
   }
 
   .dashboard-content-inner {

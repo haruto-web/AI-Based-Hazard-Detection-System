@@ -1,141 +1,89 @@
-/* Footer Styles */
+/* Footer - Compact two-line */
 .app-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.75rem 1.5rem;
   background: var(--bg-secondary);
   border-top: 1px solid var(--border);
-  padding: 2.5rem 2rem 1.5rem;
-  margin-top: auto;
+  flex-shrink: 0;
   transition: background 0.3s;
 }
 
-.footer-content {
-  max-width: 1200px;
-  margin: 0 auto;
-  display: grid;
-  grid-template-columns: 1fr 2fr 1fr;
-  gap: 2rem;
-}
-
-/* Brand */
-.footer-brand {
+.footer-row {
   display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
+  align-items: center;
+  gap: 1rem;
 }
 
-.footer-logo {
-  font-size: 1.3rem;
+.footer-brand-text {
+  font-size: 0.85rem;
   font-weight: 700;
   color: var(--accent);
-  letter-spacing: 2px;
-  margin: 0;
+  letter-spacing: 1px;
+  flex-shrink: 0;
 }
 
-.footer-tagline {
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-  margin: 0;
+.footer-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+  flex-shrink: 0;
 }
 
-.footer-copyright {
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  margin: 0.5rem 0 0;
-}
-
-/* Team */
-.footer-team {
+.footer-team-inline {
   display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.footer-section-title {
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: 0 0 0.25rem;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.footer-team-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 1rem;
+  gap: 1.5rem;
+  flex-wrap: wrap;
 }
 
 .footer-member {
   display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.72rem;
+  color: var(--text-secondary);
 }
 
-.member-name {
-  font-size: 0.82rem;
-  font-weight: 600;
+.footer-member strong {
   color: var(--text-primary);
+  font-weight: 600;
 }
 
-.member-email {
-  font-size: 0.75rem;
+.footer-member a {
   color: var(--accent);
   text-decoration: none;
+  font-size: 0.72rem;
 }
 
-.member-email:hover {
+.footer-member a:hover {
   text-decoration: underline;
 }
 
-.member-phone {
-  font-size: 0.75rem;
-  color: var(--text-secondary);
-  text-decoration: none;
-}
-
-.member-phone:hover {
-  color: var(--text-primary);
-}
-
-/* Links */
-.footer-links ul {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-}
-
-.footer-links li {
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-  cursor: default;
-}
-
-/* Bottom */
-.footer-bottom {
-  max-width: 1200px;
-  margin: 1.5rem auto 0;
-  padding-top: 1rem;
-  border-top: 1px solid var(--border);
-  text-align: center;
-}
-
-.footer-bottom p {
-  font-size: 0.75rem;
+.footer-bottom-row {
+  font-size: 0.68rem;
   color: var(--text-muted);
-  margin: 0;
 }
 
-/* Responsive */
 @media (max-width: 768px) {
-  .footer-content {
-    grid-template-columns: 1fr;
-    gap: 1.5rem;
+  .app-footer {
+    padding: 0.6rem 1rem;
   }
 
-  .footer-team-grid {
-    grid-template-columns: 1fr;
+  .footer-row {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .footer-divider {
+    display: none;
+  }
+
+  .footer-team-inline {
     gap: 0.75rem;
+  }
+
+  .footer-member span {
+    display: none;
   }
 }
