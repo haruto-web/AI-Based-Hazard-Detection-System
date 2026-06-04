@@ -1,0 +1,132 @@
+/* Onboarding Tour */
+.onboarding-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+}
+
+.onboarding-overlay::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  pointer-events: auto;
+}
+
+/* Spotlight - highlighted area */
+.onboarding-spotlight {
+  position: fixed;
+  border-radius: 8px;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.55);
+  z-index: 10000;
+  pointer-events: none;
+  transition: all 0.3s ease;
+}
+
+/* Tooltip */
+.onboarding-tooltip {
+  position: fixed;
+  z-index: 10001;
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 1.25rem 1.5rem;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  max-width: 320px;
+  min-width: 260px;
+  pointer-events: auto;
+  animation: tooltipFadeIn 0.2s ease;
+}
+
+@keyframes tooltipFadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.onboarding-tooltip-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.onboarding-tooltip-header h4 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #1a2744;
+  margin: 0;
+}
+
+.onboarding-step-count {
+  font-size: 0.72rem;
+  color: #7a8ca0;
+  font-weight: 600;
+  background: #f0f2f5;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+}
+
+.onboarding-tooltip-content {
+  font-size: 0.85rem;
+  color: #5a6b80;
+  line-height: 1.5;
+  margin: 0 0 1rem;
+}
+
+.onboarding-tooltip-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.onboarding-skip-btn {
+  padding: 0.5rem 0.75rem;
+  border: none;
+  background: transparent;
+  color: #7a8ca0;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.onboarding-skip-btn:hover {
+  color: #1a2744;
+}
+
+.onboarding-next-btn {
+  padding: 0.5rem 1.25rem;
+  border: none;
+  background: #f57c00;
+  color: #ffffff;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+  min-height: 36px;
+}
+
+.onboarding-next-btn:hover {
+  background: #e65100;
+}
+
+/* Progress dots (optional visual) */
+.onboarding-dots {
+  display: flex;
+  gap: 4px;
+  margin-top: 0.75rem;
+  justify-content: center;
+}
+
+.onboarding-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #e0e0e0;
+}
+
+.onboarding-dot.active {
+  background: #f57c00;
+}

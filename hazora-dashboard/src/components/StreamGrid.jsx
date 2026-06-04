@@ -1,7 +1,7 @@
 import StreamBox from './StreamBox';
 import '../styles/StreamGrid.css';
 
-const STREAM_COUNT = 5;
+const STREAM_COUNT = 3;
 
 export default function StreamGrid({ cameras, onCameraIPChange }) {
   const streams = Array.from({ length: STREAM_COUNT }, (_, i) => ({

@@ -1,0 +1,43 @@
+/* Profile Page */
+.profile-page { max-width: 640px; width: 100%; margin: 0 auto; }
+.profile-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 4rem 1rem; color: var(--text-secondary); gap: 1rem; }
+
+.profile-card { background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border); overflow: hidden; }
+
+.profile-card-header { display: flex; align-items: center; gap: 1.25rem; padding: 1.5rem 2rem; border-bottom: 1px solid var(--border); }
+.profile-avatar-large { display: flex; align-items: center; justify-content: center; width: 56px; height: 56px; border-radius: 50%; background: var(--accent); color: #ffffff; font-size: 1.1rem; font-weight: 700; flex-shrink: 0; }
+.profile-card-info { flex: 1; }
+.profile-card-info h2 { font-size: 1.2rem; font-weight: 700; color: var(--text-primary); margin: 0 0 0.2rem; }
+.profile-role-label { font-size: 0.85rem; color: var(--text-secondary); margin: 0; }
+
+.edit-profile-btn { padding: 0.5rem 1.25rem; background: var(--accent); color: #ffffff; border: none; border-radius: 8px; font-size: 0.82rem; font-weight: 600; cursor: pointer; transition: background 0.2s; min-height: 40px; white-space: nowrap; }
+.edit-profile-btn:hover { background: var(--accent-hover); }
+
+.profile-message { padding: 0.75rem 2rem; font-size: 0.85rem; font-weight: 500; }
+.profile-message.success { background: rgba(76, 175, 80, 0.08); color: var(--success); border-bottom: 1px solid var(--border); }
+.profile-message.error { background: rgba(244, 67, 54, 0.08); color: var(--error); border-bottom: 1px solid var(--border); }
+
+.profile-form { padding: 2rem; display: flex; flex-direction: column; gap: 1.5rem; }
+.profile-field { display: flex; flex-direction: column; gap: 0.4rem; }
+.profile-field label { font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
+.profile-field input,
+.profile-field select { padding: 0.75rem 1rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-input); color: var(--text-primary); font-size: 0.9rem; transition: border-color 0.2s; min-height: 44px; }
+.profile-field input:focus,
+.profile-field select:focus { outline: none; border-color: var(--accent); }
+.profile-field input:disabled,
+.profile-field select:disabled { background: var(--bg-input); color: var(--text-muted); cursor: default; }
+.profile-field input.field-readonly { background: var(--bg-input); color: var(--text-muted); }
+.field-hint { font-size: 0.72rem; color: var(--text-muted); }
+
+.profile-actions { display: flex; gap: 0.75rem; justify-content: flex-end; padding-top: 0.5rem; }
+.cancel-btn { padding: 0.6rem 1.25rem; border: 1px solid var(--border); border-radius: 8px; background: transparent; color: var(--text-secondary); font-size: 0.85rem; font-weight: 500; cursor: pointer; min-height: 44px; transition: background 0.2s; }
+.cancel-btn:hover { background: var(--accent-bg-hover); }
+.save-btn { padding: 0.6rem 1.25rem; background: var(--accent); color: #ffffff; border: none; border-radius: 8px; font-size: 0.85rem; font-weight: 600; cursor: pointer; min-height: 44px; transition: background 0.2s; }
+.save-btn:hover:not(:disabled) { background: var(--accent-hover); }
+.save-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+@media (max-width: 768px) {
+  .profile-card-header { flex-direction: column; text-align: center; gap: 1rem; padding: 1.5rem; }
+  .profile-form { padding: 1.5rem; }
+  .profile-actions { flex-direction: column; }
+}

@@ -16,7 +16,7 @@ describe('Sidebar - Property 8: Sidebar Active Highlight Consistency', () => {
   it('for any valid view, exactly one navigation button has the .active class and it corresponds to the correct view', () => {
     fc.assert(
       fc.property(
-        fc.constantFrom('streams', 'reports'),
+        fc.constantFrom('dashboard', 'streams', 'reports'),
         (activeView) => {
           cleanup();
 
@@ -32,14 +32,19 @@ describe('Sidebar - Property 8: Sidebar Active Highlight Consistency', () => {
           expect(activeButtons.length).toBe(1);
 
           // The active button corresponds to the correct view
-          if (activeView === 'streams') {
-            // "Live Streams" is the first button
+          // Order: Dashboard (0), Live Streams (1), Reports (2)
+          if (activeView === 'dashboard') {
             expect(buttons[0].classList.contains('active')).toBe(true);
             expect(buttons[1].classList.contains('active')).toBe(false);
-          } else if (activeView === 'reports') {
-            // "Reports" is the second button
+            expect(buttons[2].classList.contains('active')).toBe(false);
+          } else if (activeView === 'streams') {
             expect(buttons[0].classList.contains('active')).toBe(false);
             expect(buttons[1].classList.contains('active')).toBe(true);
+            expect(buttons[2].classList.contains('active')).toBe(false);
+          } else if (activeView === 'reports') {
+            expect(buttons[0].classList.contains('active')).toBe(false);
+            expect(buttons[1].classList.contains('active')).toBe(false);
+            expect(buttons[2].classList.contains('active')).toBe(true);
           }
         }
       ),

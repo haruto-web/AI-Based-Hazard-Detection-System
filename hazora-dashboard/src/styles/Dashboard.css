@@ -3,6 +3,8 @@
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  background: var(--bg-primary);
+  transition: background 0.3s;
 }
 
 .dashboard-header {
@@ -10,10 +12,11 @@
   align-items: center;
   justify-content: space-between;
   padding: 1rem 1.5rem;
-  background: #1a2332;
-  border-bottom: 1px solid #2d3a4a;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
   flex-wrap: wrap;
   gap: 0.75rem;
+  transition: background 0.3s;
 }
 
 .header-left {
@@ -25,14 +28,14 @@
 .header-left h1 {
   font-size: 1.25rem;
   font-weight: 700;
-  color: #00d4aa;
+  color: var(--text-primary);
   letter-spacing: 1px;
 }
 
 .camera-count {
   font-size: 0.7rem;
-  color: #00d4aa;
-  background: rgba(0, 212, 170, 0.1);
+  color: var(--accent);
+  background: var(--accent-bg);
   padding: 0.2rem 0.5rem;
   border-radius: 4px;
   font-weight: 600;
@@ -46,14 +49,14 @@
 
 .user-email {
   font-size: 0.8rem;
-  color: #8b95a5;
+  color: var(--text-secondary);
 }
 
 .logout-btn {
   padding: 0.5rem 1rem;
   background: transparent;
-  color: #ff6b6b;
-  border: 1px solid #ff6b6b;
+  color: var(--accent);
+  border: 1px solid var(--accent);
   border-radius: 6px;
   font-size: 0.85rem;
   cursor: pointer;
@@ -63,7 +66,7 @@
 }
 
 .logout-btn:hover {
-  background: rgba(255, 107, 107, 0.1);
+  background: var(--accent-bg);
 }
 
 .dashboard-body {
@@ -75,14 +78,23 @@
 .dashboard-content {
   flex: 1;
   overflow-y: auto;
+  background: var(--bg-primary);
+  display: flex;
+  flex-direction: column;
+  transition: background 0.3s;
+}
+
+.dashboard-content-inner {
+  flex: 1;
   padding: 1.5rem;
 }
 
+/* Streams View */
 .streams-view {
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
-  max-width: 1200px;
+  max-width: 1400px;
   width: 100%;
   margin: 0 auto;
 }
@@ -99,17 +111,17 @@
 
 /* Camera Config */
 .camera-config {
-  background: #1a2332;
+  background: var(--bg-card);
   padding: 1.25rem;
-  border-radius: 10px;
-  border: 1px solid #2d3a4a;
+  border-radius: 12px;
+  border: 1px solid var(--border);
 }
 
 .camera-config label {
   display: block;
   font-size: 0.85rem;
   font-weight: 500;
-  color: #b0bec5;
+  color: var(--text-secondary);
   margin-bottom: 0.5rem;
 }
 
@@ -121,23 +133,23 @@
 .camera-config-row input {
   flex: 1;
   padding: 0.75rem 1rem;
-  border: 1px solid #2d3a4a;
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background: #0f1923;
-  color: #e8eaed;
+  background: var(--bg-input);
+  color: var(--text-primary);
   font-size: 1rem;
   min-height: 44px;
 }
 
 .camera-config-row input:focus {
   outline: none;
-  border-color: #00d4aa;
+  border-color: var(--accent);
 }
 
 .camera-config-row button {
   padding: 0.75rem 1.5rem;
-  background: #00d4aa;
-  color: #0f1923;
+  background: var(--accent);
+  color: #ffffff;
   border: none;
   border-radius: 8px;
   font-size: 0.9rem;
@@ -150,7 +162,7 @@
 }
 
 .camera-config-row button:hover:not(:disabled) {
-  background: #00b894;
+  background: var(--accent-hover);
 }
 
 .camera-config-row button:disabled {
@@ -159,7 +171,7 @@
 }
 
 .config-error {
-  color: #ff6b6b;
+  color: var(--error);
   font-size: 0.8rem;
   margin-top: 0.5rem;
 }
@@ -191,29 +203,29 @@
     display: none;
   }
 
-  .dashboard-content {
+  .dashboard-content-inner {
     padding: 1rem;
   }
 }
 
 /* Setup Guide */
 .setup-guide {
-  background: #1a2332;
+  background: var(--bg-card);
   padding: 1.25rem;
-  border-radius: 10px;
-  border: 1px solid #2d3a4a;
+  border-radius: 12px;
+  border: 1px solid var(--border);
 }
 
 .setup-guide h3 {
   font-size: 0.95rem;
-  color: #00d4aa;
+  color: var(--accent);
   margin-bottom: 0.75rem;
 }
 
 .setup-guide ol {
   padding-left: 1.25rem;
   font-size: 0.85rem;
-  color: #8b95a5;
+  color: var(--text-secondary);
   line-height: 1.8;
 }
 
@@ -222,5 +234,5 @@
 }
 
 .setup-guide strong {
-  color: #ffd93d;
+  color: var(--text-primary);
 }

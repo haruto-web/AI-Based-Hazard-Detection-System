@@ -1,13 +1,14 @@
 /* Sidebar Styles */
 .sidebar {
-  width: 220px;
-  min-width: 220px;
-  background: #1a2332;
-  border-right: 1px solid #2d3a4a;
+  width: 250px;
+  min-width: 250px;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   padding: 1.5rem 0;
   min-height: calc(100vh - 60px);
+  transition: background 0.3s;
 }
 
 .sidebar-nav {
@@ -28,10 +29,11 @@
   align-items: center;
   gap: 0.75rem;
   padding: 0.75rem 1rem;
-  border-radius: 8px;
+  border-radius: 10px;
   background: transparent;
   border: none;
-  color: #8b95a5;
+  border-left: 3px solid transparent;
+  color: var(--text-secondary);
   font-size: 0.9rem;
   font-weight: 500;
   cursor: pointer;
@@ -42,43 +44,47 @@
 }
 
 .sidebar-nav-btn:hover {
-  background: rgba(0, 212, 170, 0.08);
-  color: #e8eaed;
+  background: var(--accent-bg-hover);
+  color: var(--text-primary);
+}
+
+.sidebar-nav-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .sidebar-nav-btn.active {
-  background: rgba(0, 212, 170, 0.12);
-  color: #00d4aa;
+  background: var(--accent-bg);
+  color: var(--accent);
   font-weight: 600;
-  border-left: 3px solid #00d4aa;
-  padding-left: calc(1rem - 3px);
+  border-left: 3px solid var(--accent);
+}
+
+.nav-icon {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nav-icon svg {
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
 }
 
 .nav-label {
   flex: 1;
 }
 
-/* ON GOING Badge */
-.nav-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.15rem 0.4rem;
-  background: rgba(0, 212, 170, 0.15);
-  color: #00d4aa;
-  font-size: 0.6rem;
-  font-weight: 700;
-  border-radius: 4px;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-/* Responsive: collapse sidebar on small screens */
 @media (max-width: 768px) {
   .sidebar {
-    width: 60px;
-    min-width: 60px;
-    padding: 1rem 0;
+    width: 64px;
+    min-width: 64px;
   }
 
   .sidebar-nav {
@@ -88,16 +94,16 @@
   .sidebar-nav-btn {
     justify-content: center;
     padding: 0.75rem;
-  }
-
-  .nav-label,
-  .nav-badge {
-    display: none;
+    border-left: none;
+    border-bottom: 3px solid transparent;
   }
 
   .sidebar-nav-btn.active {
-    padding-left: 0.75rem;
     border-left: none;
-    border-bottom: 2px solid #00d4aa;
+    border-bottom: 3px solid var(--accent);
+  }
+
+  .nav-label {
+    display: none;
   }
 }

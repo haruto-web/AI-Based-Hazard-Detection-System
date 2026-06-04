@@ -114,7 +114,13 @@ export default function StreamBox({ id, label, cameraIP, onIPChange }) {
 
         {status === 'failed' && (
           <div className="stream-box-failed">
-            <div className="failed-icon">⚠️</div>
+            <div className="failed-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                <line x1="12" y1="9" x2="12" y2="13" />
+                <line x1="12" y1="17" x2="12.01" y2="17" />
+              </svg>
+            </div>
             <p>Connection failed</p>
             <button className="retry-btn" onClick={() => onIPChange(id, cameraIP)}>
               Retry
@@ -124,7 +130,12 @@ export default function StreamBox({ id, label, cameraIP, onIPChange }) {
 
         {status === 'idle' && (
           <div className="stream-box-placeholder">
-            <div className="placeholder-icon">📷</div>
+            <div className="placeholder-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M23 7l-7 5 7 5V7z" />
+                <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+              </svg>
+            </div>
             <p>No camera connected</p>
           </div>
         )}
