@@ -1,0 +1,157 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ========================================================================
+    // HELPER FUNCTIONS
+    // ========================================================================
+    
+    // Check if user is authenticated
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    // Check if user owns the document
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+    
+    // Prevent role modification by user themselves
+    function roleNotChanged() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']);
+    }
+    
+    // Get current user's role from Firestore
+    function getUserRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+    
+    // Check if user has Head Office role (elevated privileges)
+    function isHeadOffice() {
+      return isSignedIn() && getUserRole() in [
+        'Safety Engineer - Head Office',
+        'Safety Manager - Head Office', 
+        'HSE Head - Head Office'
+      ];
+    }
+    
+    // Check if user is a Safety Officer or Manager
+    function isSafetyOfficer() {
+      return isSignedIn() && getUserRole() in [
+        'Site Safety Officer',
+        'Site Safety Practitioner',
+        'Site Construction Manager',
+        'Safety Engineer - Head Office',
+        'Safety Manager - Head Office',
+        'HSE Head - Head Office'
+      ];
+    }
+    
+    // ========================================================================
+    // USERS COLLECTION
+    // ========================================================================
+    match /users/{userId} {
+      // Users can read their own profile
+      allow read: if isOwner(userId);
+      
+      // Users can update their own profile but NOT their role
+      allow update: if isOwner(userId) && roleNotChanged();
+      
+      // New users can be created during registration
+      allow create: if isSignedIn() && request.auth.uid == userId;
+      
+      // Only Head Office can delete users
+      allow delete: if isHeadOffice();
+      
+      // Notifications subcollection - user can manage their own
+      match /notifications/{notifId} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+    
+    // ========================================================================
+    // SITES COLLECTION
+    // ========================================================================
+    match /sites/{siteId} {
+      // All authenticated users can read sites
+      allow read: if isSignedIn();
+      
+      // Any authenticated user can write (preserving your current logic)
+      // TODO: In production, restrict this to Head Office only
+      allow write: if isSignedIn();
+    }
+    
+    // ========================================================================
+    // DETECTIONS COLLECTION (AI Detection Records)
+    // ========================================================================
+    match /detections/{detectionId} {
+      // All authenticated users can read detections
+      allow read: if isSignedIn();
+      
+      // Allow writes for authenticated users (for AI system integration)
+      // In production, this should be restricted to backend/Cloud Functions
+      allow write: if isSignedIn();
+    }
+    
+    // ========================================================================
+    // INCIDENTS COLLECTION (Safety Incident Logs)
+    // ========================================================================
+    match /incidents/{incidentId} {
+      // All authenticated users can read incidents
+      allow read: if isSignedIn();
+      
+      // Safety officers and managers can create/update incidents
+      allow create, update: if isSafetyOfficer();
+      
+      // Only Head Office can delete incidents
+      allow delete: if isHeadOffice();
+    }
+    
+    // ========================================================================
+    // REPORTS COLLECTION
+    // ========================================================================
+    match /reports/{reportId} {
+      // All authenticated users can read reports
+      allow read: if isSignedIn();
+      
+      // Safety Officers and Head Office can create reports
+      allow create: if isSafetyOfficer();
+      
+      // Reports cannot be modified or deleted (audit trail integrity)
+      allow update, delete: if false;
+    }
+    
+    // ========================================================================
+    // AUDIT LOGS COLLECTION (SHA-256 Tamper-Proof Logs)
+    // ========================================================================
+    match /audit_logs/{logId} {
+      // Only Head Office can read audit logs
+      allow read: if isHeadOffice();
+      
+      // Allow authenticated users to write (for logging system)
+      // Each log has SHA-256 signature for integrity verification
+      allow create: if isSignedIn();
+      
+      // Audit logs cannot be modified or deleted (tamper-proof)
+      allow update, delete: if false;
+    }
+    
+    // ========================================================================
+    // CAMERA CONFIGURATIONS (Sensitive Data)
+    // ========================================================================
+    match /camera_configs/{configId} {
+      // Only authenticated users can read
+      allow read: if isSignedIn();
+      
+      // Only Safety Officers and Head Office can manage cameras
+      allow create, update, delete: if isSafetyOfficer();
+    }
+    
+    // ========================================================================
+    // DEFAULT RULE: DENY EVERYTHING ELSE
+    // ========================================================================
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,0 +1,313 @@
+===============================================================================
+HAZORA SECURITY IMPLEMENTATION GUIDE
+SHA-256 Based Security System
+===============================================================================
+
+OVERVIEW:
+---------
+This guide explains how to deploy the new security implementation that uses
+SHA-256 hashing for data integrity, audit logging, and enhanced authentication.
+
+===============================================================================
+STEP 1: DEPLOY FIRESTORE SECURITY RULES (CRITICAL - DO THIS FIRST!)
+===============================================================================
+
+Your Firestore database is currently UNPROTECTED. Deploy security rules immediately:
+
+1. Install Firebase CLI (if not already installed):
+   npm install -g firebase-tools
+
+2. Login to Firebase:
+   firebase login
+
+3. Initialize Firebase in your project (if not done):
+   cd hazora-dashboard
+   firebase init firestore
+
+   - Select your Firebase project
+   - Use existing firestore.rules file (already created)
+   - Press Enter for firestore.indexes.json
+
+4. Deploy the security rules:
+   firebase deploy --only firestore:rules
+
+5. Verify deployment:
+   - Go to Firebase Console
+   - Navigate to Firestore Database > Rules
+   - You should see the new rules deployed
+
+IMPORTANT: Until you deploy these rules, your database is WIDE OPEN!
+
+===============================================================================
+STEP 2: TEST SECURITY RULES
+===============================================================================
+
+Test your rules in Firebase Console:
+
+1. Go to Firestore Database > Rules
+2. Click "Rules Playground"
+3. Test these scenarios:
+
+   TEST 1: User can read own profile
+   Location: /users/USER_ID
+   Authenticated as: USER_ID
+   Operation: read
+   Expected: ALLOW
+
+   TEST 2: User cannot read other profiles
+   Location: /users/OTHER_USER_ID
+   Authenticated as: USER_ID
+   Operation: read
+   Expected: DENY
+
+   TEST 3: User cannot change own role
+   Location: /users/USER_ID
+   Authenticated as: USER_ID
+   Operation: update
+   Data: { role: "HSE Head - Head Office" }
+   Expected: DENY
+
+   TEST 4: Only Head Office can manage sites
+   Location: /sites/SITE_ID
+   Authenticated as: user with "HSE Head - Head Office" role
+   Operation: write
+   Expected: ALLOW
+
+===============================================================================
+STEP 3: UNDERSTAND NEW SECURITY FEATURES
+===============================================================================
+
+1. SHA-256 HASHING (src/utils/security.js)
+   -----------------------------------------
+   - computeSHA256(data): Hash any string
+   - computeFileSHA256(file): Hash uploaded files
+   - verifyFileIntegrity(file, hash): Verify file hasn't been tampered
+   - createDataSignature(data): Create integrity signature for documents
+   - sanitizeInput(input): Prevent XSS attacks
+
+2. AUDIT LOGGING (src/utils/auditLogger.js)
+   ------------------------------------------
+   - Logs all security-relevant events
+   - Each log entry has SHA-256 signature (tamper-proof)
+   - Tracks: logins, data changes, unauthorized access, camera events
+   - Logs stored in 'audit_logs' collection
+
+3. ENHANCED AUTHENTICATION (AuthForm.jsx)
+   ----------------------------------------
+   - Password strength meter (weak/medium/strong)
+   - Minimum 8 characters (was 6)
+   - Input sanitization to prevent XSS
+   - Email validation
+   - Phone number validation (Philippine format)
+   - Audit logging for all auth events
+
+4. FIRESTORE SECURITY RULES
+   -------------------------
+   - Role-based access control (server-side)
+   - Users can only read/write own profile
+   - Users cannot change their own role
+   - Only Head Office can manage sites
+   - Audit logs are read-only
+   - All changes require authentication
+
+===============================================================================
+STEP 4: USING SHA-256 IN YOUR APPLICATION
+===============================================================================
+
+EXAMPLE 1: Verify file upload integrity
+----------------------------------------
+import { computeFileSHA256, verifyFileIntegrity } from './utils/security';
+
+async function handleFileUpload(file) {
+  // Compute hash
+  const hash = await computeFileSHA256(file);
+  console.log('File SHA-256:', hash);
+  
+  // Later, verify integrity
+  const isValid = await verifyFileIntegrity(file, hash);
+  if (!isValid) {
+    alert('File has been modified!');
+  }
+}
+
+EXAMPLE 2: Create tamper-proof audit logs
+------------------------------------------
+import { createAuditLogEntry } from './utils/security';
+import { addDoc, collection } from 'firebase/firestore';
+
+async function logImportantAction(userId, action) {
+  const entry = await createAuditLogEntry(userId, action, {
+    timestamp: new Date().toISOString()
+  });
+  
+  // entry includes SHA-256 signature
+  await addDoc(collection(db, 'audit_logs'), entry);
+}
+
+EXAMPLE 3: Sanitize user input
+-------------------------------
+import { sanitizeInput } from './utils/security';
+
+function handleUserInput(input) {
+  const safe = sanitizeInput(input);
+  // Now 'safe' has HTML/script tags escaped
+  return safe;
+}
+
+EXAMPLE 4: Check password strength
+-----------------------------------
+import { checkPasswordStrength } from './utils/security';
+
+const result = checkPasswordStrength('MyPassword123!');
+// result = { score: 5, strength: 'strong', feedback: [] }
+
+===============================================================================
+STEP 5: MONITORING & MAINTENANCE
+===============================================================================
+
+1. MONITOR AUDIT LOGS
+   -------------------
+   - Regularly review audit_logs collection in Firestore
+   - Look for suspicious patterns:
+     * Multiple failed logins
+     * Unauthorized access attempts
+     * Role change attempts
+   
+   Query example (in Firebase Console):
+   Collection: audit_logs
+   Filter: action == "UNAUTHORIZED_ACCESS"
+   Order: timestamp (descending)
+
+2. VERIFY DATA INTEGRITY
+   ----------------------
+   - Audit log entries include SHA-256 signatures
+   - If signature doesn't match data, log has been tampered
+   - Use verifyDataSignature() to check
+
+3. REVIEW USER ROLES
+   ------------------
+   - Only Head Office should have elevated privileges
+   - Regularly audit users collection for unauthorized role changes
+   - Use Firebase Console to monitor user data
+
+===============================================================================
+STEP 6: ADDITIONAL SECURITY RECOMMENDATIONS
+===============================================================================
+
+PRIORITY HIGH:
+--------------
+☐ Enable Firebase App Check (prevents API abuse)
+☐ Set up Firebase Authentication rate limiting
+☐ Enable 2FA for Head Office accounts
+☐ Implement session timeout (auto-logout after inactivity)
+
+PRIORITY MEDIUM:
+----------------
+☐ Add Content Security Policy (CSP) headers
+☐ Implement HTTPS enforcement
+☐ Add password reset flow
+☐ Enable email verification
+☐ Set up backup/disaster recovery
+
+PRIORITY LOW:
+-------------
+☐ Add CAPTCHA for login (prevent bots)
+☐ Implement IP whitelisting for admin actions
+☐ Set up security alert notifications
+☐ Add file upload size limits
+
+===============================================================================
+STEP 7: DEPLOYMENT CHECKLIST
+===============================================================================
+
+Before going to production:
+
+☐ Deploy Firestore security rules
+☐ Test all security rules in Firebase Console
+☐ Verify audit logging works
+☐ Test password strength meter
+☐ Test user registration with new validation
+☐ Test login with enhanced security
+☐ Verify role-based access control
+☐ Check that users cannot modify their own roles
+☐ Test camera configuration security
+☐ Review all audit log entries
+☐ Verify input sanitization works
+☐ Test file upload integrity verification
+☐ Enable HTTPS in production
+☐ Set up environment variables securely
+☐ Review .env file (ensure not in git)
+
+===============================================================================
+TROUBLESHOOTING
+===============================================================================
+
+ISSUE: "Missing or insufficient permissions"
+SOLUTION: 
+- Deploy firestore.rules: firebase deploy --only firestore:rules
+- Check user is authenticated
+- Verify user role in Firestore users collection
+
+ISSUE: Audit logging not working
+SOLUTION:
+- Check browser console for errors
+- Verify audit_logs collection exists
+- Check Firestore rules allow audit_logs writes from backend
+
+ISSUE: Password strength meter not showing
+SOLUTION:
+- Check AuthForm.jsx imports security.js
+- Verify password state is updating
+- Check CSS for .password-strength classes
+
+ISSUE: Users can modify their roles
+SOLUTION:
+- Ensure Firestore rules are deployed
+- Check roleNotChanged() function in rules
+- Test in Firebase Rules Playground
+
+===============================================================================
+SECURITY INCIDENT RESPONSE
+===============================================================================
+
+If you detect a security breach:
+
+1. IMMEDIATELY:
+   - Disable affected user accounts in Firebase Console
+   - Review audit_logs for unauthorized access
+   - Check for data modifications
+
+2. INVESTIGATE:
+   - Query audit_logs for suspicious activity
+   - Check for unauthorized role changes
+   - Review recent data modifications
+   - Verify data signatures haven't been tampered
+
+3. REMEDIATE:
+   - Reset passwords for affected accounts
+   - Restore data from backups if needed
+   - Update security rules if vulnerabilities found
+   - Document incident and response
+
+4. PREVENT:
+   - Add additional monitoring
+   - Tighten security rules
+   - Enable additional authentication factors
+   - Train users on security best practices
+
+===============================================================================
+CONTACT & SUPPORT
+===============================================================================
+
+Firebase Security Documentation:
+https://firebase.google.com/docs/rules
+
+Firebase Security Rules Reference:
+https://firebase.google.com/docs/rules/rules-language
+
+SHA-256 MDN Documentation:
+https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/digest
+
+===============================================================================
+END OF GUIDE
+===============================================================================

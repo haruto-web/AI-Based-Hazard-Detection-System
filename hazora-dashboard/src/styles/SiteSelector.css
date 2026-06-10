@@ -130,14 +130,29 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.35rem 0.5rem;
+  padding: 0.4rem 0.5rem;
   border-radius: 4px;
-  font-size: 0.78rem;
-  color: var(--text-primary);
 }
 
 .site-list-item:hover {
   background: var(--accent-bg-hover);
+}
+
+.site-list-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.site-list-name {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.site-list-creator {
+  font-size: 0.68rem;
+  color: var(--text-muted);
 }
 
 .site-remove-btn {

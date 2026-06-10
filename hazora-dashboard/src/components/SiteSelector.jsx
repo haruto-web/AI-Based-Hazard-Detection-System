@@ -9,8 +9,8 @@ const HEAD_OFFICE_ROLES = [
   'HSE Head - Head Office',
 ];
 
-export default function SiteSelector({ userRole }) {
-  const { sites, activeSite, setActiveSite, addSite, removeSite } = useSites();
+export default function SiteSelector({ userRole, userName }) {
+  const { sites, activeSite, setActiveSite, addSite, removeSite, loading } = useSites();
   const { user } = useAuth();
   const [showAddForm, setShowAddForm] = useState(false);
   const [newSiteName, setNewSiteName] = useState('');
@@ -18,6 +18,17 @@ export default function SiteSelector({ userRole }) {
   const [adding, setAdding] = useState(false);
 
   const canManageSites = HEAD_OFFICE_ROLES.includes(userRole);
+
+  if (loading) {
+    return (
+      <div className="site-selector-wrapper">
+        <div className="site-selector-row">
+          <label>Site:</label>
+          <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Loading...</span>
+        </div>
+      </div>
+    );
+  }
 
   async function handleAddSite(e) {
     e.preventDefault();
@@ -31,6 +42,8 @@ export default function SiteSelector({ userRole }) {
       await addSite(newSiteName, {
         uid: user.uid,
         email: user.email,
+        name: userName || user.email,
+        role: userRole || '',
       });
       setNewSiteName('');
       setShowAddForm(false);
@@ -58,12 +71,26 @@ export default function SiteSelector({ userRole }) {
         <select
           id="site-select-global"
           value={activeSite}
-          onChange={(e) => setActiveSite(e.target.value)}
+          onChange={(e) => {
+            const newSite = e.target.value;
+            if (newSite === activeSite) return;
+            if (window.confirm(`Are you sure you want to switch to "${newSite}"?`)) {
+              setActiveSite(newSite);
+            } else {
+              e.target.value = activeSite;
+            }
+          }}
           className="site-select"
         >
-          {sites.map((site) => (
-            <option key={site.id} value={site.name}>{site.name}</option>
-          ))}
+          {sites.map((site) => {
+            const creator = site.createdBy;
+            const label = creator && creator.name
+              ? `${site.name} — ${creator.name} (${creator.role || 'N/A'})`
+              : site.name;
+            return (
+              <option key={site.id} value={site.name}>{label}</option>
+            );
+          })}
         </select>
 
         {canManageSites && (
@@ -101,7 +128,14 @@ export default function SiteSelector({ userRole }) {
             <ul className="site-list">
               {sites.map((site) => (
                 <li key={site.id} className="site-list-item">
-                  <span>{site.name}</span>
+                  <div className="site-list-info">
+                    <span className="site-list-name">{site.name}</span>
+                    {site.createdBy && site.createdBy.name && (
+                      <span className="site-list-creator">
+                        {site.createdBy.name} — {site.createdBy.role || 'Unknown'}
+                      </span>
+                    )}
+                  </div>
                   {site.id !== 'default' && (
                     <button
                       className="site-remove-btn"

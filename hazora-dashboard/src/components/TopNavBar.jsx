@@ -3,13 +3,59 @@ import { useNotifications } from '../context/NotificationContext';
 import { useTheme } from '../context/ThemeContext';
 import '../styles/TopNavBar.css';
 
-export default function TopNavBar({ userEmail, onLogout, onNavigateProfile }) {
+export default function TopNavBar({ userEmail, onLogout, onNavigateProfile, onNavigate }) {
   const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications();
   const { theme, toggleTheme } = useTheme();
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [showResults, setShowResults] = useState(false);
   const notifRef = useRef(null);
   const profileRef = useRef(null);
+  const searchRef = useRef(null);
+
+  // Searchable items
+  const SEARCH_ITEMS = [
+    { id: 'dashboard', label: 'Dashboard', keywords: 'dashboard analytics overview stats' },
+    { id: 'streams', label: 'Live Streams', keywords: 'live streams camera esp32 monitoring video' },
+    { id: 'reports', label: 'Reports', keywords: 'reports export pdf csv generate' },
+    { id: 'about', label: 'About', keywords: 'about project hazora info system' },
+    { id: 'profile', label: 'Profile', keywords: 'profile settings account name phone role' },
+  ];
+
+  function handleSearch(query) {
+    setSearchQuery(query);
+    if (!query.trim()) {
+      setSearchResults([]);
+      setShowResults(false);
+      return;
+    }
+    const lower = query.toLowerCase();
+    const matches = SEARCH_ITEMS.filter(item =>
+      item.label.toLowerCase().includes(lower) || item.keywords.includes(lower)
+    );
+    setSearchResults(matches);
+    setShowResults(true);
+  }
+
+  function handleSearchSelect(id) {
+    if (id === 'profile') {
+      onNavigateProfile?.();
+    } else {
+      onNavigate?.(id);
+    }
+    setSearchQuery('');
+    setSearchResults([]);
+    setShowResults(false);
+  }
+
+  function handleSearchSubmit(e) {
+    e.preventDefault();
+    if (searchResults.length > 0) {
+      handleSearchSelect(searchResults[0].id);
+    }
+  }
 
   // Get user initials from email
   const initials = userEmail
@@ -26,6 +72,9 @@ export default function TopNavBar({ userEmail, onLogout, onNavigateProfile }) {
       }
       if (profileRef.current && !profileRef.current.contains(e.target)) {
         setShowProfile(false);
+      }
+      if (searchRef.current && !searchRef.current.contains(e.target)) {
+        setShowResults(false);
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
@@ -45,7 +94,7 @@ export default function TopNavBar({ userEmail, onLogout, onNavigateProfile }) {
   return (
     <div className="top-nav-bar">
       <div className="top-nav-left">
-        <div className="search-container">
+        <form className="search-container" ref={searchRef} onSubmit={handleSearchSubmit}>
           <svg className="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <circle cx="11" cy="11" r="8" />
             <path d="M21 21l-4.35-4.35" />
@@ -55,8 +104,30 @@ export default function TopNavBar({ userEmail, onLogout, onNavigateProfile }) {
             className="search-input"
             placeholder="Search for anything..."
             aria-label="Search"
+            value={searchQuery}
+            onChange={(e) => handleSearch(e.target.value)}
+            onFocus={() => { if (searchQuery) setShowResults(true); }}
           />
-        </div>
+          {showResults && searchResults.length > 0 && (
+            <div className="search-dropdown">
+              {searchResults.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className="search-result-item"
+                  onClick={() => handleSearchSelect(item.id)}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          )}
+          {showResults && searchQuery && searchResults.length === 0 && (
+            <div className="search-dropdown">
+              <p className="search-no-results">No results found</p>
+            </div>
+          )}
+        </form>
       </div>
 
       <div className="top-nav-right">

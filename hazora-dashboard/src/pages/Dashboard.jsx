@@ -31,6 +31,7 @@ export default function Dashboard() {
   const [activeView, setActiveView] = useState('dashboard');
   const [showTour, setShowTour] = useState(false);
   const [userRole, setUserRole] = useState('');
+  const [userName, setUserName] = useState('');
 
   // Check tour status per user
   useEffect(() => {
@@ -88,6 +89,9 @@ export default function Dashboard() {
           if (data.role) {
             setUserRole(data.role);
           }
+          if (data.fullName) {
+            setUserName(data.fullName);
+          }
           if (data.cameras && Array.isArray(data.cameras)) {
             setCameras(data.cameras);
             localStorage.setItem(STORAGE_KEY, JSON.stringify(data.cameras));
@@ -137,6 +141,7 @@ export default function Dashboard() {
     <div className="dashboard">
       <header className="dashboard-header">
         <div className="header-left">
+          <img src="/hazora-logo.png" alt="Hazora Logo" className="header-logo" />
           <h1>HAZORA</h1>
           <ConnectionIndicator status={connectionStatus} />
           {connectedCount > 0 && (
@@ -155,11 +160,11 @@ export default function Dashboard() {
         <Sidebar activeView={activeView} onViewChange={setActiveView} userRole={userRole} />
 
         <main className="dashboard-content">
-          <TopNavBar userEmail={user.email} onLogout={handleLogout} onNavigateProfile={() => setActiveView('profile')} />
+          <TopNavBar userEmail={user.email} onLogout={handleLogout} onNavigateProfile={() => setActiveView('profile')} onNavigate={setActiveView} />
 
           {activeView !== 'profile' && activeView !== 'about' && (
             <div className="site-bar">
-              <SiteSelector userRole={userRole} />
+              <SiteSelector userRole={userRole} userName={userName} />
             </div>
           )}
 

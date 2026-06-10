@@ -59,6 +59,36 @@
 .form-group input:disabled { opacity: 0.6; cursor: not-allowed; }
 .form-group input::placeholder { color: var(--text-muted); }
 
+.password-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.password-wrapper input {
+  width: 100%;
+  padding-right: 2.5rem;
+}
+
+.password-toggle {
+  position: absolute;
+  right: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0.25rem;
+  border-radius: 4px;
+  transition: color 0.2s;
+}
+
+.password-toggle:hover {
+  color: var(--accent);
+}
+
 .form-select {
   padding: 0.8rem 1rem;
   border: 1px solid var(--border);
@@ -104,3 +134,55 @@
 .auth-switch a { color: var(--accent); font-weight: 500; }
 
 @media (max-width: 768px) { .auth-form-card { padding: 2rem 1.5rem; } }
+
+/* Password Strength Indicator */
+.password-strength {
+  margin-top: 8px;
+}
+
+.strength-indicator {
+  height: 4px;
+  background: #e2e8f0;
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+
+.strength-bar {
+  height: 100%;
+  transition: width 0.3s ease, background-color 0.3s ease;
+  border-radius: 2px;
+}
+
+.strength-bar.strength-weak {
+  width: 33%;
+  background-color: #ef4444;
+}
+
+.strength-bar.strength-medium {
+  width: 66%;
+  background-color: #f59e0b;
+}
+
+.strength-bar.strength-strong {
+  width: 100%;
+  background-color: #10b981;
+}
+
+.strength-text {
+  font-size: 12px;
+  color: #64748b;
+  text-transform: capitalize;
+}
+
+.password-strength-weak .strength-text {
+  color: #ef4444;
+}
+
+.password-strength-medium .strength-text {
+  color: #f59e0b;
+}
+
+.password-strength-strong .strength-text {
+  color: #10b981;
+}
