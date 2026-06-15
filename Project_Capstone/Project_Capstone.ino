@@ -2,8 +2,8 @@
  * HAZORA - Hazard Detection System
  * ESP32-CAM Wi-Fi Provisioning Portal & Camera Stream
  * 
- * v2.6 - IP Display in Captive Portal
- * - Shows camera IP immediately after WiFi connection
+ * v2.7 - IP Display in Captive Portal (Fixed)
+ * - Shows camera IP immediately after WiFi connection in portal
  * - Beautiful success page with IP prominently displayed
  * - Users can copy IP before closing portal
  * 
@@ -93,52 +93,9 @@ unsigned long uptimeStart = 0;
 unsigned long totalFrames = 0;
 
 // =============================================================================
-// Custom WiFi Success Page (for captive portal)
+// Global flag for showing IP in portal
 // =============================================================================
-static const char SUCCESS_HTML[] PROGMEM = R"rawliteral(
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Connected Successfully!</title>
-<style>
-* {margin:0;padding:0;box-sizing:border-box;}
-body {font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#1a1f36;color:#fff;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:1.5rem;}
-.container {text-align:center;max-width:400px;width:100%;}
-.checkmark {width:80px;height:80px;margin:0 auto 1.5rem;}
-.checkmark-circle {stroke:#22c55e;stroke-width:3;fill:none;animation:dash 0.6s ease-in-out;}
-.checkmark-check {stroke:#22c55e;stroke-width:3;fill:none;stroke-linecap:round;animation:dash 0.6s 0.35s ease-in-out forwards;stroke-dasharray:48;stroke-dashoffset:48;}
-@keyframes dash{to{stroke-dashoffset:0;}}
-h1 {color:#22c55e;font-size:1.5rem;margin-bottom:0.5rem;}
-p {color:#94a3b8;font-size:0.95rem;margin-bottom:2rem;}
-.ip-label {color:#64748b;font-size:0.85rem;margin-bottom:0.5rem;}
-.ip-address {font-size:2rem;font-weight:700;color:#22c55e;letter-spacing:1px;margin-bottom:2rem;word-break:break-all;}
-.instructions {background:#243351;border-radius:12px;padding:1.25rem;margin-bottom:1rem;text-align:left;}
-.instructions p {margin-bottom:0.75rem;font-size:0.9rem;color:#cbd5e1;}
-.instructions p:last-child {margin-bottom:0;}
-.note {color:#64748b;font-size:0.8rem;margin-top:1rem;}
-</style>
-</head>
-<body>
-<div class="container">
-<svg class="checkmark" viewBox="0 0 52 52">
-<circle class="checkmark-circle" cx="26" cy="26" r="25"/>
-<path class="checkmark-check" d="M14 27l7 7 16-16"/>
-</svg>
-<h1>Connected Successfully!</h1>
-<p>Camera is now online</p>
-<div class="ip-label">Camera IP address:</div>
-<div class="ip-address" id="ip">{{IP_ADDRESS}}</div>
-<div class="instructions">
-<p><strong>Enter this IP in the Hazora Dashboard to stream.</strong></p>
-<p>Or use Auto-Discovery to find it automatically.</p>
-</div>
-<p class="note">Make sure your device is connected to the same WiFi network.</p>
-</div>
-</body>
-</html>
-)rawliteral";
+String assignedIP = "";
 
 // =============================================================================
 // Dashboard HTML (stored in PROGMEM)
@@ -397,21 +354,8 @@ static esp_err_t capture_handler(httpd_req_t *req) {
 
 // GET / - Dashboard page or Success page
 static esp_err_t dashboard_handler(httpd_req_t *req) {
-  // Check if this is first visit after WiFi connection (within 60 seconds of boot)
-  unsigned long uptime = (millis() - uptimeStart) / 1000;
-  
-  if (uptime < 60) {
-    // Show success page for first minute
-    String successPage = SUCCESS_HTML;
-    successPage.replace("{{IP_ADDRESS}}", WiFi.localIP().toString());
-    
-    httpd_resp_set_type(req, "text/html");
-    return httpd_resp_send(req, successPage.c_str(), successPage.length());
-  } else {
-    // Show normal dashboard after first minute
-    httpd_resp_set_type(req, "text/html");
-    return httpd_resp_send(req, DASHBOARD_HTML, strlen(DASHBOARD_HTML));
-  }
+  httpd_resp_set_type(req, "text/html");
+  return httpd_resp_send(req, DASHBOARD_HTML, strlen(DASHBOARD_HTML));
 }
 
 // GET /status - JSON device status
@@ -527,65 +471,61 @@ void configModeCallback(WiFiManager *myWiFiManager) {
 
 void saveConfigCallback() {
   Serial.println("[PORTAL] WiFi credentials saved!");
-  Serial.println("[PORTAL] Preparing success page with camera IP...");
+  assignedIP = WiFi.localIP().toString();
+  Serial.printf("[PORTAL] Connected! Camera IP: %s\n", assignedIP.c_str());
 }
 
-// Custom success page HTML that shows IP immediately
-String getSuccessPageHTML() {
-  String html = R"rawliteral(
-<!DOCTYPE html>
-<html><head>
-<meta charset='UTF-8'>
-<meta name='viewport' content='width=device-width,initial-scale=1'>
-<title>Connected!</title>
+// Generate success HTML with actual IP
+String generateSuccessHTML() {
+  String ip = WiFi.localIP().toString();
+  String html = R"(<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Connected Successfully!</title>
 <style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:1rem}
-.card{background:#fff;border-radius:20px;padding:2.5rem;max-width:450px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.3);text-align:center}
-.check{width:80px;height:80px;margin:0 auto 1.5rem;background:#22c55e;border-radius:50%;display:flex;align-items:center;justify-content:center;animation:pop 0.5s cubic-bezier(0.68,-0.55,0.265,1.55)}
-@keyframes pop{0%{transform:scale(0)}100%{transform:scale(1)}}
-.check svg{width:50px;height:50px;stroke:#fff;stroke-width:4;fill:none;stroke-linecap:round;stroke-linejoin:round}
-h1{color:#1e293b;font-size:1.75rem;margin-bottom:0.5rem}
-.subtitle{color:#64748b;margin-bottom:2rem}
-.ip-box{background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);border-radius:12px;padding:1.5rem;margin-bottom:1.5rem}
-.ip-label{color:#e0e7ff;font-size:0.85rem;margin-bottom:0.5rem;text-transform:uppercase;letter-spacing:1px}
-.ip{font-size:2rem;font-weight:bold;color:#fff;letter-spacing:2px;word-break:break-all;font-family:'Courier New',monospace}
-.instructions{background:#f1f5f9;border-radius:12px;padding:1.25rem;margin-bottom:1rem;text-align:left}
-.instructions p{color:#475569;font-size:0.9rem;margin-bottom:0.75rem;line-height:1.5}
-.instructions p:last-child{margin-bottom:0}
-.btn{display:inline-block;background:#22c55e;color:#fff;padding:0.75rem 2rem;border-radius:8px;text-decoration:none;font-weight:600;margin-top:1rem;transition:all 0.2s}
-.btn:hover{background:#16a34a;transform:translateY(-2px);box-shadow:0 4px 12px rgba(34,197,94,0.4)}
-.note{color:#94a3b8;font-size:0.8rem;margin-top:1rem}
-@media(max-width:480px){body{padding:0.5rem}.card{padding:1.5rem}.ip{font-size:1.5rem}}
+* {margin:0;padding:0;box-sizing:border-box;}
+body {font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#1a1f36;color:#fff;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:1.5rem;}
+.container {text-align:center;max-width:450px;width:100%;}
+.checkmark {width:80px;height:80px;margin:0 auto 1.5rem;}
+.checkmark-circle {stroke:#22c55e;stroke-width:3;fill:none;animation:dash 0.6s ease-in-out;}
+.checkmark-check {stroke:#22c55e;stroke-width:3;fill:none;stroke-linecap:round;animation:dash 0.6s 0.35s ease-in-out forwards;stroke-dasharray:48;stroke-dashoffset:48;}
+@keyframes dash{to{stroke-dashoffset:0;}}
+h1 {color:#22c55e;font-size:1.8rem;margin-bottom:0.5rem;}
+p {color:#94a3b8;font-size:1rem;margin-bottom:2rem;}
+.ip-label {color:#64748b;font-size:0.95rem;margin-bottom:0.75rem;}
+.ip-address {font-size:2.5rem;font-weight:700;color:#22c55e;letter-spacing:2px;margin-bottom:2.5rem;word-break:break-all;font-family:monospace;}
+.instructions {background:#243351;border-radius:12px;padding:1.5rem;margin-bottom:1rem;text-align:left;}
+.instructions p {margin-bottom:1rem;font-size:0.95rem;color:#cbd5e1;line-height:1.5;}
+.instructions p:last-child {margin-bottom:0;}
+.instructions strong {color:#fff;}
+.note {color:#64748b;font-size:0.85rem;margin-top:1.5rem;line-height:1.4;}
 </style>
-</head><body>
-<div class='card'>
-<div class='check'><svg viewBox='0 0 52 52'><path d='M14 27l7 7 16-16'/></svg></div>
-<h1>🎉 Connected Successfully!</h1>
-<p class='subtitle'>Camera is now online and streaming</p>
-<div class='ip-box'>
-<div class='ip-label'>📡 Camera IP Address</div>
-<div class='ip' id='ip'>)rawliteral";
+</head>
+<body>
+<div class="container">
+<svg class="checkmark" viewBox="0 0 52 52">
+<circle class="checkmark-circle" cx="26" cy="26" r="25"/>
+<path class="checkmark-check" d="M14 27l7 7 16-16"/>
+</svg>
+<h1>Connected Successfully!</h1>
+<p>Camera is now online</p>
+<div class="ip-label">📡 Camera IP Address:</div>
+<div class="ip-address">)";
   
-  html += WiFi.localIP().toString();
-  
-  html += R"rawliteral(</div>
+  html += ip;
+  html += R"(</div>
+<div class="instructions">
+<p><strong>📌 Next Steps:</strong></p>
+<p>1. Write down or screenshot the IP address above</p>
+<p>2. Enter this IP in the Hazora Dashboard to view the live stream</p>
+<p>3. Make sure your device is connected to the same WiFi network</p>
 </div>
-<div class='instructions'>
-<p><strong>✓ Copy this IP address</strong></p>
-<p><strong>✓ Open the Hazora Dashboard</strong></p>
-<p><strong>✓ Paste the IP in the camera configuration</strong></p>
-<p>Or use Auto-Discovery to find it automatically</p>
+<p class="note">⚠️ Important: Keep this IP address for accessing your camera stream. You can also find it by visiting the camera's dashboard.</p>
 </div>
-<a href='http://)rawliteral";
-  
-  html += WiFi.localIP().toString();
-  
-  html += R"rawliteral(' class='btn'>Open Camera Dashboard</a>
-<p class='note'>Make sure your device is on the same WiFi network</p>
-</div>
-</body></html>
-)rawliteral";
+</body>
+</html>)";
   
   return html;
 }
@@ -599,7 +539,7 @@ void setup() {
   Serial.println("");
   Serial.println("========================================");
   Serial.println("  🎥 HAZORA - Hazard Detection System");
-  Serial.println("  ESP32-CAM v2.6 (IP Display in Portal)");
+  Serial.println("  ESP32-CAM v2.7 (IP Display in Portal)");
   Serial.println("========================================");
   Serial.println("  Network: WiFi Router OR Mobile Hotspot");
   Serial.println("  Streaming: LOCAL SITE ONLY");
@@ -624,10 +564,17 @@ void setup() {
   wifiManager.setAPCallback(configModeCallback);
   wifiManager.setSaveConfigCallback(saveConfigCallback);
   
-  // Set custom success page HTML (shows IP immediately after connection)
-  wifiManager.setWebServerCallback([](){ 
-    wifiManager.server->on("/success", HTTP_GET, [](){
-      wifiManager.server->send(200, "text/html", getSuccessPageHTML());
+  // Custom portal HTML - this page shows AFTER WiFi connects successfully
+  wifiManager.setSaveParamsCallback([](){
+    assignedIP = WiFi.localIP().toString();
+    Serial.printf("[PORTAL] Showing success page with IP: %s\n", assignedIP.c_str());
+  });
+  
+  // Override the success page to show IP
+  wifiManager.setWebServerCallback([](){
+    wifiManager.server->on("/wifisave", HTTP_GET, [&](){
+      String html = generateSuccessHTML();
+      wifiManager.server->send(200, "text/html", html);
     });
   });
 
