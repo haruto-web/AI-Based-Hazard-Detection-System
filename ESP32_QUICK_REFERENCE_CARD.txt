@@ -1,0 +1,158 @@
+╔══════════════════════════════════════════════════════════════════╗
+║                                                                  ║
+║              📷 HAZORA ESP32-CAM QUICK REFERENCE                 ║
+║                    (Keep with device)                            ║
+║                                                                  ║
+╠══════════════════════════════════════════════════════════════════╣
+║                                                                  ║
+║  DEVICE INFORMATION                                              ║
+║  ═══════════════════                                             ║
+║                                                                  ║
+║  Static IP:        _____._____._____._____                       ║
+║                    (Example: 192.168.1.100)                      ║
+║                                                                  ║
+║  Router Gateway:   _____._____._____._____                       ║
+║                    (Example: 192.168.1.1)                        ║
+║                                                                  ║
+║  Wi-Fi Network:    ___________________________                   ║
+║                                                                  ║
+║  Setup Date:       _____ / _____ / _____                         ║
+║                                                                  ║
+╠══════════════════════════════════════════════════════════════════╣
+║                                                                  ║
+║  FIRST TIME SETUP                                                ║
+║  ═══════════════════                                             ║
+║                                                                  ║
+║  1. Power on ESP32-CAM                                           ║
+║  2. Connect phone to Wi-Fi: "HAZORA_CAM_SETUP"                   ║
+║  3. Enter your Wi-Fi credentials in portal                       ║
+║  4. Device will connect and use static IP                        ║
+║                                                                  ║
+╠══════════════════════════════════════════════════════════════════╣
+║                                                                  ║
+║  ACCESS URLS                                                     ║
+║  ═══════════════                                                 ║
+║                                                                  ║
+║  Dashboard:   http://_______________                             ║
+║                                                                  ║
+║  Stream:      http://_______________:81/stream                   ║
+║                                                                  ║
+║  Status:      http://_______________/status                      ║
+║                                                                  ║
+╠══════════════════════════════════════════════════════════════════╣
+║                                                                  ║
+║  FOR WEBSITE                                                     ║
+║  ═══════════════                                                 ║
+║                                                                  ║
+║  Enter this IP in HAZORA dashboard "Live Streams":               ║
+║                                                                  ║
+║         ┌────────────────────────────┐                           ║
+║         │  _____._____._____._____   │                           ║
+║         └────────────────────────────┘                           ║
+║                                                                  ║
+╠══════════════════════════════════════════════════════════════════╣
+║                                                                  ║
+║  TROUBLESHOOTING                                                 ║
+║  ═══════════════════                                             ║
+║                                                                  ║
+║  ❌ Can't connect?                                                ║
+║     → Check if device is powered                                 ║
+║     → Ping IP: ping [your_IP]                                    ║
+║     → Try browser: http://[your_IP]                              ║
+║                                                                  ║
+║  ❌ Video not loading?                                            ║
+║     → Make sure you're on same Wi-Fi network                     ║
+║     → Check firewall settings (allow port 80 & 81)               ║
+║     → Test stream URL: http://[your_IP]:81/stream                ║
+║                                                                  ║
+║  ❌ Need to reset Wi-Fi?                                          ║
+║     → Go to: http://[your_IP]                                    ║
+║     → Click "Reset Wi-Fi" button                                 ║
+║     → Device restarts in setup mode                              ║
+║                                                                  ║
+╠══════════════════════════════════════════════════════════════════╣
+║                                                                  ║
+║  INDICATORS                                                      ║
+║  ═══════════════                                                 ║
+║                                                                  ║
+║  🔴 Red LED flashing    → Camera initializing                    ║
+║  🟢 LED off             → Normal operation                       ║
+║  🔵 LED steady          → Setup mode active                      ║
+║                                                                  ║
+╠══════════════════════════════════════════════════════════════════╣
+║                                                                  ║
+║  MAINTENANCE NOTES                                               ║
+║  ═══════════════════                                             ║
+║                                                                  ║
+║  Last Service:    _____ / _____ / _____                          ║
+║                                                                  ║
+║  Notes:           _________________________________________      ║
+║                   _________________________________________      ║
+║                   _________________________________________      ║
+║                                                                  ║
+╠══════════════════════════════════════════════════════════════════╣
+║                                                                  ║
+║  SUPPORT                                                         ║
+║  ═══════════════                                                 ║
+║                                                                  ║
+║  Documentation: See STATIC_IP_SETUP_GUIDE.md                     ║
+║  Visual Guide:  See STATIC_IP_VISUAL_GUIDE.txt                   ║
+║  Arduino Code:  Project_Capstone.ino                             ║
+║                                                                  ║
+║  Project: HAZORA - AI-Based Hazard Detection System              ║
+║  Version: 2.1 (Static IP Update)                                 ║
+║                                                                  ║
+╚══════════════════════════════════════════════════════════════════╝
+
+
+═══════════════════════════════════════════════════════════════════
+MULTIPLE CAMERA SETUP
+═══════════════════════════════════════════════════════════════════
+
+If using multiple ESP32-CAM devices, assign different IPs:
+
+┌────────────────────────────────────────────────────────────────┐
+│ Camera 1:  192.168.1.100   →   Stream 1 in dashboard          │
+│ Camera 2:  192.168.1.101   →   Stream 2 in dashboard          │
+│ Camera 3:  192.168.1.102   →   Stream 3 in dashboard          │
+└────────────────────────────────────────────────────────────────┘
+
+Configuration in Arduino code (Project_Capstone.ino):
+
+Camera 1: #define STATIC_IP 192,168,1,100
+Camera 2: #define STATIC_IP 192,168,1,101
+Camera 3: #define STATIC_IP 192,168,1,102
+
+
+═══════════════════════════════════════════════════════════════════
+NETWORK COMPATIBILITY
+═══════════════════════════════════════════════════════════════════
+
+✅ Works with:
+   • Home routers (TP-Link, Netgear, Asus, etc.)
+   • Office networks (with proper VLAN access)
+   • Mobile hotspots (if static IP configured)
+   • Mesh networks (Google WiFi, Eero, etc.)
+
+⚠️ May need adjustment for:
+   • Corporate firewalls (ports 80, 81)
+   • VPN networks
+   • Public Wi-Fi (usually blocked)
+
+
+═══════════════════════════════════════════════════════════════════
+POWER REQUIREMENTS
+═══════════════════════════════════════════════════════════════════
+
+Voltage:    5V DC
+Current:    500mA minimum, 1A recommended
+Connector:  Micro USB or USB-C (depending on board)
+
+⚠️ Do NOT power from laptop USB during operation - use wall adapter!
+
+
+═══════════════════════════════════════════════════════════════════
+
+           🎉 Your ESP32-CAM is ready for 24/7 monitoring! 🎉
+
+═══════════════════════════════════════════════════════════════════

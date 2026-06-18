@@ -1,0 +1,214 @@
+# ESP32-CAM Static IP - Quick Start Visual Guide
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│                                                                          │
+│                    📷 HAZORA ESP32-CAM STATIC IP SETUP                   │
+│                                                                          │
+└──────────────────────────────────────────────────────────────────────────┘
+
+
+STEP 1: Find Your Router IP
+═══════════════════════════════════════════════════════════════════════════
+
+    Windows:                               Mac/Linux:
+    ┌─────────────┐                       ┌─────────────┐
+    │   cmd.exe   │                       │  Terminal   │
+    └─────────────┘                       └─────────────┘
+         ↓                                      ↓
+    Type: ipconfig                        Type: ifconfig
+         ↓                                      ↓
+    Default Gateway: 192.168.1.1         Router IP: 192.168.1.1
+    Your PC IP:      192.168.1.50
+
+
+STEP 2: Edit Arduino Code Configuration
+═══════════════════════════════════════════════════════════════════════════
+
+    Open: Project_Capstone.ino
+    
+    Find this section (around line 40):
+    ┌────────────────────────────────────────────────────────────────┐
+    │ #define USE_STATIC_IP     true                                 │
+    │ #define STATIC_IP         192,168,1,100  ← CHANGE THIS         │
+    │ #define GATEWAY_IP        192,168,1,1    ← MATCH YOUR ROUTER   │
+    │ #define SUBNET_MASK       255,255,255,0  ← USUALLY SAME        │
+    └────────────────────────────────────────────────────────────────┘
+
+    Examples:
+    ┌────────────────────────────────────────────────────────────────┐
+    │ Router 192.168.1.1  → STATIC_IP: 192,168,1,100                 │
+    │ Router 192.168.0.1  → STATIC_IP: 192,168,0,100                 │
+    │ Router 10.0.0.1     → STATIC_IP: 10,0,0,100                    │
+    └────────────────────────────────────────────────────────────────┘
+
+
+STEP 3: Upload Code to ESP32-CAM
+═══════════════════════════════════════════════════════════════════════════
+
+    Arduino IDE Steps:
+    
+    1. Tools → Board → AI Thinker ESP32-CAM
+    2. Tools → Port → COM[X] (your port)
+    3. Click Upload (→ button)
+    4. Wait for "Done uploading"
+
+
+STEP 4: First-Time Wi-Fi Setup
+═══════════════════════════════════════════════════════════════════════════
+
+    On Phone/Laptop:
+    
+    ┌─────────────────┐
+    │ 1. Power ESP32  │
+    └────────┬────────┘
+             ↓
+    ┌─────────────────────────┐
+    │ 2. Connect to Wi-Fi:    │
+    │    "HAZORA_CAM_SETUP"   │
+    └────────┬────────────────┘
+             ↓
+    ┌─────────────────────────┐
+    │ 3. Captive portal opens │
+    │    Enter your Wi-Fi     │
+    │    Name & Password      │
+    └────────┬────────────────┘
+             ↓
+    ┌─────────────────────────┐
+    │ 4. Click "Save"         │
+    │    Device connects!     │
+    └─────────────────────────┘
+
+
+STEP 5: Verify IP Address
+═══════════════════════════════════════════════════════════════════════════
+
+    Open Serial Monitor (115200 baud):
+    
+    ┌────────────────────────────────────────────────────────────────┐
+    │ [WIFI] Static IP configured successfully!                      │
+    │ [WIFI] Connected successfully!                                 │
+    │ [WIFI] IP Address: 192.168.1.100         ← THIS IS YOUR IP!    │
+    │ [WIFI] Gateway: 192.168.1.1                                    │
+    │                                                                │
+    │ 📌 FOR WEBSITE: Enter this IP in your dashboard:               │
+    │    ➜  192.168.1.100                                            │
+    └────────────────────────────────────────────────────────────────┘
+
+
+STEP 6: Test in Browser (Optional)
+═══════════════════════════════════════════════════════════════════════════
+
+    Open Browser → Go to: http://192.168.1.100
+    
+    You should see:
+    ┌────────────────────────────────────────────┐
+    │         HAZORA Camera Monitor             │
+    │         [Live video stream here]          │
+    │                                           │
+    │   [Device Status]  [Reset Wi-Fi]         │
+    └────────────────────────────────────────────┘
+
+
+STEP 7: Enter IP in React Dashboard
+═══════════════════════════════════════════════════════════════════════════
+
+    1. Open your HAZORA website
+    2. Navigate to "Live Streams"
+    3. Enter IP in Stream box:
+    
+       ┌──────────────────────────────┐
+       │ Stream 1                     │
+       │ ┌──────────────────────┐     │
+       │ │ 192.168.1.100       │ →   │  ← Click connect arrow
+       │ └──────────────────────┘     │
+       └──────────────────────────────┘
+    
+    4. Video appears! ✅
+
+
+═══════════════════════════════════════════════════════════════════════════
+TROUBLESHOOTING FLOWCHART
+═══════════════════════════════════════════════════════════════════════════
+
+    Can't connect to ESP32-CAM?
+              ↓
+    ┌─────────────────────┐
+    │ Ping the IP:        │
+    │ ping 192.168.1.100  │
+    └────┬────────────┬───┘
+         │            │
+    [Success]    [Timeout]
+         │            │
+         ↓            ↓
+    Check firewall   ┌────────────────────────┐
+    (Port 80/81)     │ IP conflict or wrong   │
+                     │ gateway settings       │
+                     └────┬───────────────────┘
+                          ↓
+                     Try different IP:
+                     192,168,1,101
+
+
+═══════════════════════════════════════════════════════════════════════════
+NETWORK DIAGRAM
+═══════════════════════════════════════════════════════════════════════════
+
+    Internet
+       ↕
+    ┌──────────────┐
+    │   Router     │  IP: 192.168.1.1 (Gateway)
+    └──────┬───────┘
+           │
+           ├─────────┬─────────┬─────────┬─────────┐
+           │         │         │         │         │
+      ┌────┴───┐ ┌──┴───┐ ┌──┴───┐ ┌──┴───┐ ┌──┴───┐
+      │ESP32-1 │ │ESP32-2│ │ESP32-3│ │ PC  │ │Phone│
+      │ .100   │ │ .101  │ │ .102  │ │ .50 │ │ .75 │
+      └────────┘ └───────┘ └───────┘ └─────┘ └─────┘
+         ↓          ↓         ↓
+      Stream 1   Stream 2  Stream 3
+      
+    All devices on same network (192.168.1.x)
+    Can communicate with each other!
+
+
+═══════════════════════════════════════════════════════════════════════════
+CONFIGURATION CHEAT SHEET
+═══════════════════════════════════════════════════════════════════════════
+
+    Router Type          STATIC_IP Setting          GATEWAY_IP
+    ───────────────────────────────────────────────────────────────────
+    192.168.1.1    →    192,168,1,100         →    192,168,1,1
+    192.168.0.1    →    192,168,0,100         →    192,168,0,1
+    10.0.0.1       →    10,0,0,100            →    10,0,0,1
+    192.168.100.1  →    192,168,100,100       →    192,168,100,1
+    
+    Pattern: Keep first 3 numbers same, change last to 100+
+
+
+═══════════════════════════════════════════════════════════════════════════
+WHAT TO ENTER WHERE
+═══════════════════════════════════════════════════════════════════════════
+
+    Arduino Code:           React Dashboard:        Browser Test:
+    ───────────────────────────────────────────────────────────────────
+    192,168,1,100      →    192.168.1.100      →    http://192.168.1.100
+    (commas)                (dots)                  (http://)
+    
+    ⚠️ NOTE: Use COMMAS in Arduino, DOTS in website!
+
+
+═══════════════════════════════════════════════════════════════════════════
+DONE! 🎉
+═══════════════════════════════════════════════════════════════════════════
+
+Your ESP32-CAM now has a permanent IP address!
+
+✅ Power on → Always gets same IP
+✅ No Serial Monitor needed
+✅ Just enter IP in website and connect
+✅ Reliable for 24/7 monitoring
+
+Questions? Check STATIC_IP_SETUP_GUIDE.md for detailed help!
+```

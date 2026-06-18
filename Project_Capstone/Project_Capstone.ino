@@ -475,61 +475,6 @@ void saveConfigCallback() {
   Serial.printf("[PORTAL] Connected! Camera IP: %s\n", assignedIP.c_str());
 }
 
-// Generate success HTML with actual IP
-String generateSuccessHTML() {
-  String ip = WiFi.localIP().toString();
-  String html = R"(<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Connected Successfully!</title>
-<style>
-* {margin:0;padding:0;box-sizing:border-box;}
-body {font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#1a1f36;color:#fff;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:1.5rem;}
-.container {text-align:center;max-width:450px;width:100%;}
-.checkmark {width:80px;height:80px;margin:0 auto 1.5rem;}
-.checkmark-circle {stroke:#22c55e;stroke-width:3;fill:none;animation:dash 0.6s ease-in-out;}
-.checkmark-check {stroke:#22c55e;stroke-width:3;fill:none;stroke-linecap:round;animation:dash 0.6s 0.35s ease-in-out forwards;stroke-dasharray:48;stroke-dashoffset:48;}
-@keyframes dash{to{stroke-dashoffset:0;}}
-h1 {color:#22c55e;font-size:1.8rem;margin-bottom:0.5rem;}
-p {color:#94a3b8;font-size:1rem;margin-bottom:2rem;}
-.ip-label {color:#64748b;font-size:0.95rem;margin-bottom:0.75rem;}
-.ip-address {font-size:2.5rem;font-weight:700;color:#22c55e;letter-spacing:2px;margin-bottom:2.5rem;word-break:break-all;font-family:monospace;}
-.instructions {background:#243351;border-radius:12px;padding:1.5rem;margin-bottom:1rem;text-align:left;}
-.instructions p {margin-bottom:1rem;font-size:0.95rem;color:#cbd5e1;line-height:1.5;}
-.instructions p:last-child {margin-bottom:0;}
-.instructions strong {color:#fff;}
-.note {color:#64748b;font-size:0.85rem;margin-top:1.5rem;line-height:1.4;}
-</style>
-</head>
-<body>
-<div class="container">
-<svg class="checkmark" viewBox="0 0 52 52">
-<circle class="checkmark-circle" cx="26" cy="26" r="25"/>
-<path class="checkmark-check" d="M14 27l7 7 16-16"/>
-</svg>
-<h1>Connected Successfully!</h1>
-<p>Camera is now online</p>
-<div class="ip-label">📡 Camera IP Address:</div>
-<div class="ip-address">)";
-  
-  html += ip;
-  html += R"(</div>
-<div class="instructions">
-<p><strong>📌 Next Steps:</strong></p>
-<p>1. Write down or screenshot the IP address above</p>
-<p>2. Enter this IP in the Hazora Dashboard to view the live stream</p>
-<p>3. Make sure your device is connected to the same WiFi network</p>
-</div>
-<p class="note">⚠️ Important: Keep this IP address for accessing your camera stream. You can also find it by visiting the camera's dashboard.</p>
-</div>
-</body>
-</html>)";
-  
-  return html;
-}
-
 // =============================================================================
 // Setup
 // =============================================================================
@@ -564,19 +509,39 @@ void setup() {
   wifiManager.setAPCallback(configModeCallback);
   wifiManager.setSaveConfigCallback(saveConfigCallback);
   
-  // Custom portal HTML - this page shows AFTER WiFi connects successfully
-  wifiManager.setSaveParamsCallback([](){
-    assignedIP = WiFi.localIP().toString();
-    Serial.printf("[PORTAL] Showing success page with IP: %s\n", assignedIP.c_str());
-  });
+  // Inject custom HTML/JavaScript to display IP after successful connection
+  // This modifies the "Saving Credentials" page to show IP before portal closes
+  String customHead = "<style>"
+    ".success-msg{background:#22c55e;color:#fff;padding:20px;border-radius:8px;margin:20px 0;display:none;}"
+    ".ip-display{font-size:28px;font-weight:bold;color:#22c55e;background:#1a1f36;padding:15px;border-radius:6px;margin:15px 0;font-family:monospace;letter-spacing:2px;}"
+    ".instructions{background:#f0f9ff;color:#1e293b;padding:15px;border-radius:6px;margin:15px 0;text-align:left;line-height:1.6;}"
+    "</style>"
+    "<script>"
+    "function checkConnection(){"
+      "fetch('/status').then(function(r){return r.json();})"
+      ".then(function(d){"
+        "if(d.ip){"
+          "document.body.innerHTML='<div style=\"max-width:500px;margin:50px auto;padding:20px;text-align:center;font-family:sans-serif;\">"
+            "<h1 style=\"color:#22c55e;margin-bottom:10px;\">✅ Connected Successfully!</h1>"
+            "<p style=\"color:#64748b;margin-bottom:30px;\">Camera is now online</p>"
+            "<p style=\"color:#64748b;font-size:14px;margin-bottom:10px;\">📡 Camera IP Address:</p>"
+            "<div class=\"ip-display\">'+d.ip+'</div>"
+            "<div class=\"instructions\">"
+              "<p><strong>📌 Next Steps:</strong></p>"
+              "<p>1. <strong>Write down or screenshot</strong> the IP address above</p>"
+              "<p>2. Enter this IP in the <strong>Hazora Dashboard</strong> to view the stream</p>"
+              "<p>3. Make sure your device is on the <strong>same WiFi network</strong></p>"
+            "</div>"
+            "<p style=\"color:#64748b;font-size:12px;margin-top:20px;\">⚠️ Keep this IP for accessing your camera. You can close this page now.</p>"
+          "</div>';"
+        "}"
+      "})"
+      ".catch(function(){setTimeout(checkConnection,1000);});"
+    "}"
+    "setTimeout(checkConnection,3000);"
+    "</script>";
   
-  // Override the success page to show IP
-  wifiManager.setWebServerCallback([](){
-    wifiManager.server->on("/wifisave", HTTP_GET, [&](){
-      String html = generateSuccessHTML();
-      wifiManager.server->send(200, "text/html", html);
-    });
-  });
+  wifiManager.setCustomHeadElement(customHead.c_str());
 
   Serial.println("[WIFI] Starting WiFiManager...");
   Serial.println("[WIFI] If no credentials saved, connect to AP: HAZORA_CAM_SETUP");
