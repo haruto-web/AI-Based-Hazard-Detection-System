@@ -2,10 +2,10 @@
  * HAZORA - Hazard Detection System
  * ESP32-CAM Wi-Fi Provisioning Portal & Camera Stream
  * 
- * v2.7 - IP Display in Captive Portal (Fixed)
- * - Shows camera IP immediately after WiFi connection in portal
- * - Beautiful success page with IP prominently displayed
- * - Users can copy IP before closing portal
+ * v2.8 - IP Display in Captive Portal (Working)
+ * - After WiFi connects, keeps AP alive to show success page with IP
+ * - User sees IP and clicks Done to proceed
+ * - Uses dual-mode WiFi (AP+STA) to keep portal open
  * 
  * Uses WiFiManager for captive portal provisioning.
  * Streams MJPEG via ESP-IDF httpd server.
@@ -96,6 +96,7 @@ unsigned long totalFrames = 0;
 // Global flag for showing IP in portal
 // =============================================================================
 String assignedIP = "";
+bool portalDone = false;  // Flag: user clicked Done on success page
 
 // =============================================================================
 // Dashboard HTML (stored in PROGMEM)
@@ -471,8 +472,98 @@ void configModeCallback(WiFiManager *myWiFiManager) {
 
 void saveConfigCallback() {
   Serial.println("[PORTAL] WiFi credentials saved!");
-  assignedIP = WiFi.localIP().toString();
-  Serial.printf("[PORTAL] Connected! Camera IP: %s\n", assignedIP.c_str());
+}
+
+// =============================================================================
+// Success Page Server (runs on AP after WiFi connects)
+// =============================================================================
+#include <WebServer.h>
+WebServer successServer(80);
+
+void handleSuccessPage() {
+  String ip = WiFi.localIP().toString();
+  String html = "<!DOCTYPE html><html><head>"
+    "<meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'>"
+    "<title>Connected!</title>"
+    "<style>"
+    "*{margin:0;padding:0;box-sizing:border-box;}"
+    "body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#1a1f36;color:#fff;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:1.5rem;}"
+    ".c{text-align:center;max-width:400px;width:100%;}"
+    "h1{color:#22c55e;font-size:1.6rem;margin-bottom:0.5rem;}"
+    "p{color:#94a3b8;font-size:0.95rem;margin-bottom:1.5rem;}"
+    ".lbl{color:#64748b;font-size:0.85rem;margin-bottom:0.5rem;}"
+    ".ip{font-size:2.2rem;font-weight:700;color:#22c55e;letter-spacing:2px;margin-bottom:2rem;font-family:monospace;}"
+    ".info{background:#243351;border-radius:10px;padding:1.2rem;text-align:left;margin-bottom:1.5rem;}"
+    ".info p{margin-bottom:0.8rem;font-size:0.9rem;color:#cbd5e1;}"
+    ".info p:last-child{margin-bottom:0;}"
+    ".info strong{color:#fff;}"
+    ".btn{display:inline-block;background:#22c55e;color:#fff;border:none;padding:14px 40px;font-size:1rem;font-weight:600;border-radius:8px;cursor:pointer;text-decoration:none;}"
+    ".btn:hover{background:#16a34a;}"
+    ".note{color:#64748b;font-size:0.8rem;margin-top:1rem;}"
+    "</style></head><body>"
+    "<div class='c'>"
+    "<h1>&#10003; Connected Successfully!</h1>"
+    "<p>Camera is now online</p>"
+    "<div class='lbl'>Camera IP Address:</div>"
+    "<div class='ip'>" + ip + "</div>"
+    "<div class='info'>"
+    "<p><strong>Next Steps:</strong></p>"
+    "<p>1. Write down or screenshot the IP above</p>"
+    "<p>2. Enter this IP in the Hazora Dashboard</p>"
+    "<p>3. Make sure your device is on the same WiFi</p>"
+    "</div>"
+    "<a href='/done' class='btn'>Done</a>"
+    "<p class='note'>Click Done after you've saved the IP address.</p>"
+    "</div></body></html>";
+  
+  successServer.send(200, "text/html", html);
+}
+
+void handleDone() {
+  String html = "<!DOCTYPE html><html><head>"
+    "<meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'>"
+    "<style>body{font-family:sans-serif;background:#1a1f36;color:#fff;display:flex;align-items:center;justify-content:center;min-height:100vh;}</style>"
+    "</head><body><h2 style='color:#22c55e;'>&#10003; Setup Complete! You can close this page.</h2></body></html>";
+  successServer.send(200, "text/html", html);
+  portalDone = true;
+}
+
+void showSuccessPortal() {
+  // Start AP mode alongside STA (dual mode)
+  WiFi.mode(WIFI_AP_STA);
+  WiFi.softAP("HAZORA_CAM_SETUP");
+  delay(500);
+  
+  Serial.printf("[PORTAL] Success page AP started at: %s\n", WiFi.softAPIP().toString().c_str());
+  Serial.printf("[PORTAL] Showing IP: %s\n", WiFi.localIP().toString().c_str());
+  
+  // Start webserver on AP
+  successServer.on("/", handleSuccessPage);
+  successServer.on("/done", handleDone);
+  successServer.onNotFound(handleSuccessPage);  // Any URL shows success page
+  successServer.begin();
+  
+  Serial.println("[PORTAL] Waiting for user to click Done...");
+  
+  // Keep serving until user clicks Done or 2 minutes timeout
+  unsigned long startTime = millis();
+  unsigned long timeout = 120000;  // 2 minutes
+  
+  while (!portalDone && (millis() - startTime < timeout)) {
+    successServer.handleClient();
+    delay(10);
+  }
+  
+  // Cleanup: stop AP, switch to STA only
+  successServer.stop();
+  WiFi.softAPdisconnect(true);
+  WiFi.mode(WIFI_STA);
+  
+  if (portalDone) {
+    Serial.println("[PORTAL] User clicked Done. Proceeding...");
+  } else {
+    Serial.println("[PORTAL] Timeout reached. Proceeding...");
+  }
 }
 
 // =============================================================================
@@ -484,7 +575,7 @@ void setup() {
   Serial.println("");
   Serial.println("========================================");
   Serial.println("  🎥 HAZORA - Hazard Detection System");
-  Serial.println("  ESP32-CAM v2.7 (IP Display in Portal)");
+  Serial.println("  ESP32-CAM v2.8 (IP Display in Portal)");
   Serial.println("========================================");
   Serial.println("  Network: WiFi Router OR Mobile Hotspot");
   Serial.println("  Streaming: LOCAL SITE ONLY");
@@ -508,49 +599,25 @@ void setup() {
   // Set callbacks
   wifiManager.setAPCallback(configModeCallback);
   wifiManager.setSaveConfigCallback(saveConfigCallback);
-  
-  // Inject custom HTML/JavaScript to display IP after successful connection
-  // This modifies the "Saving Credentials" page to show IP before portal closes
-  String customHead = "<style>"
-    ".success-msg{background:#22c55e;color:#fff;padding:20px;border-radius:8px;margin:20px 0;display:none;}"
-    ".ip-display{font-size:28px;font-weight:bold;color:#22c55e;background:#1a1f36;padding:15px;border-radius:6px;margin:15px 0;font-family:monospace;letter-spacing:2px;}"
-    ".instructions{background:#f0f9ff;color:#1e293b;padding:15px;border-radius:6px;margin:15px 0;text-align:left;line-height:1.6;}"
-    "</style>"
-    "<script>"
-    "function checkConnection(){"
-      "fetch('/status').then(function(r){return r.json();})"
-      ".then(function(d){"
-        "if(d.ip){"
-          "document.body.innerHTML='<div style=\"max-width:500px;margin:50px auto;padding:20px;text-align:center;font-family:sans-serif;\">"
-            "<h1 style=\"color:#22c55e;margin-bottom:10px;\">✅ Connected Successfully!</h1>"
-            "<p style=\"color:#64748b;margin-bottom:30px;\">Camera is now online</p>"
-            "<p style=\"color:#64748b;font-size:14px;margin-bottom:10px;\">📡 Camera IP Address:</p>"
-            "<div class=\"ip-display\">'+d.ip+'</div>"
-            "<div class=\"instructions\">"
-              "<p><strong>📌 Next Steps:</strong></p>"
-              "<p>1. <strong>Write down or screenshot</strong> the IP address above</p>"
-              "<p>2. Enter this IP in the <strong>Hazora Dashboard</strong> to view the stream</p>"
-              "<p>3. Make sure your device is on the <strong>same WiFi network</strong></p>"
-            "</div>"
-            "<p style=\"color:#64748b;font-size:12px;margin-top:20px;\">⚠️ Keep this IP for accessing your camera. You can close this page now.</p>"
-          "</div>';"
-        "}"
-      "})"
-      ".catch(function(){setTimeout(checkConnection,1000);});"
-    "}"
-    "setTimeout(checkConnection,3000);"
-    "</script>";
-  
-  wifiManager.setCustomHeadElement(customHead.c_str());
 
   Serial.println("[WIFI] Starting WiFiManager...");
   Serial.println("[WIFI] If no credentials saved, connect to AP: HAZORA_CAM_SETUP");
 
-  if (!wifiManager.autoConnect("HAZORA_CAM_SETUP")) {
+  // Check if we need portal (no saved credentials)
+  bool needsPortal = !wifiManager.autoConnect("HAZORA_CAM_SETUP");
+  
+  if (needsPortal) {
     Serial.println("[WIFI] Portal timed out - restarting device...");
     delay(1000);
     ESP.restart();
   }
+  
+  // WiFi connected! Now show the IP on the AP so user can see it
+  assignedIP = WiFi.localIP().toString();
+  Serial.printf("[WIFI] Connected! IP: %s\n", assignedIP.c_str());
+  
+  // Keep AP alive temporarily to show the IP to the user
+  showSuccessPortal();
 
   // Connection successful
   WiFi.setSleep(false);
