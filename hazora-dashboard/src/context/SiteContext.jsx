@@ -1,5 +1,5 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { collection, addDoc, deleteDoc, doc, serverTimestamp, onSnapshot } from 'firebase/firestore';
+import { createContext, useContext, useState, useEffect } from 'react';
+import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 
 const SiteContext = createContext(null);
@@ -60,37 +60,10 @@ export function SiteProvider({ children }) {
     return () => unsubscribe();
   }, []);
 
-  const addSite = useCallback(async (siteName, createdBy) => {
-    if (!siteName.trim()) return;
-    if (sites.some(s => s.name.toLowerCase() === siteName.trim().toLowerCase())) {
-      throw new Error('Site already exists');
-    }
-    try {
-      const docRef = await addDoc(collection(db, 'sites'), {
-        name: siteName.trim(),
-        createdAt: serverTimestamp(),
-        createdBy: createdBy || {},
-      });
-      return { id: docRef.id, name: siteName.trim() };
-    } catch (err) {
-      throw new Error('Failed to add site: ' + err.message);
-    }
-  }, [sites]);
-
-  const removeSite = useCallback(async (siteId) => {
-    try {
-      await deleteDoc(doc(db, 'sites', siteId));
-    } catch (err) {
-      throw new Error('Failed to remove site: ' + err.message);
-    }
-  }, []);
-
   const value = {
     sites,
     activeSite,
     setActiveSite,
-    addSite,
-    removeSite,
     loading,
   };
 

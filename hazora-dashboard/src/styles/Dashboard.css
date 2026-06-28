@@ -95,22 +95,16 @@
 
 .dashboard-content-inner {
   flex: 1;
-  padding: 1.5rem;
+  padding: 1.25rem 1.5rem;
   overflow-y: auto;
-}
-
-.site-bar {
-  padding: 0.75rem 1.5rem;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-secondary);
 }
 
 /* Streams View */
 .streams-view {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
-  max-width: 1400px;
+  gap: 1.25rem;
+  max-width: 1680px;
   width: 100%;
   margin: 0 auto;
 }
@@ -200,13 +194,14 @@
   }
 
   .stream-section {
-    flex: 2;
+    flex: 1 1 auto;
+    min-width: 0;
   }
 
   .controls-section {
-    flex: 1;
-    min-width: 280px;
-    max-width: 360px;
+    flex: 0 0 320px;
+    min-width: 300px;
+    max-width: 340px;
   }
 }
 

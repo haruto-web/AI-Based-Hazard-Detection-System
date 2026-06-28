@@ -17,7 +17,6 @@ import ProfilePage from '../components/ProfilePage';
 import AboutPage from '../components/AboutPage';
 import Footer from '../components/Footer';
 import OnboardingTour from '../components/OnboardingTour';
-import SiteSelector from '../components/SiteSelector';
 import '../styles/Dashboard.css';
 
 const STREAM_COUNT = 3;
@@ -161,12 +160,6 @@ export default function Dashboard() {
 
         <main className="dashboard-content">
           <TopNavBar userEmail={user.email} onLogout={handleLogout} onNavigateProfile={() => setActiveView('profile')} onNavigate={setActiveView} />
-
-          {activeView !== 'profile' && activeView !== 'about' && (
-            <div className="site-bar">
-              <SiteSelector userRole={userRole} userName={userName} />
-            </div>
-          )}
 
           <div className="dashboard-content-inner">
             {activeView === 'dashboard' && canAccess(userRole, 'dashboard') && (

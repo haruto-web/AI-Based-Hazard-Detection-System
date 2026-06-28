@@ -89,6 +89,7 @@ unsigned long lastWifiCheck = 0;
 unsigned long lastFrameTime = 0;
 int wifiReconnectAttempts = 0;
 volatile int activeStreamClients = 0;
+portMUX_TYPE streamClientMux = portMUX_INITIALIZER_UNLOCKED;
 unsigned long uptimeStart = 0;
 unsigned long totalFrames = 0;
 
@@ -97,6 +98,8 @@ unsigned long totalFrames = 0;
 // =============================================================================
 String assignedIP = "";
 bool portalDone = false;  // Flag: user clicked Done on success page
+bool configPortalStarted = false;
+bool credentialsSavedInPortal = false;
 
 // =============================================================================
 // Dashboard HTML (stored in PROGMEM)
@@ -172,6 +175,7 @@ function getStatus() {
 // =============================================================================
 bool initCamera() {
   camera_config_t config;
+  framesize_t selectedFrameSize = FRAMESIZE_QVGA;
   config.ledc_channel = LEDC_CHANNEL_0;
   config.ledc_timer = LEDC_TIMER_0;
   config.pin_d0 = Y2_GPIO_NUM;
@@ -196,14 +200,16 @@ bool initCamera() {
   // PSRAM detection: use higher resolution and more buffers if available
   if (psramFound()) {
     Serial.println("[CAM] PSRAM found - using VGA with 2 frame buffers");
-    config.frame_size = FRAMESIZE_VGA;
+    selectedFrameSize = FRAMESIZE_VGA;
+    config.frame_size = selectedFrameSize;
     config.jpeg_quality = 10;
     config.fb_count = 2;
     config.fb_location = CAMERA_FB_IN_PSRAM;
     config.grab_mode = CAMERA_GRAB_LATEST;
   } else {
     Serial.println("[CAM] No PSRAM - using QVGA with 1 frame buffer");
-    config.frame_size = FRAMESIZE_QVGA;
+    selectedFrameSize = FRAMESIZE_QVGA;
+    config.frame_size = selectedFrameSize;
     config.jpeg_quality = 12;
     config.fb_count = 1;
     config.fb_location = CAMERA_FB_IN_DRAM;
@@ -220,14 +226,14 @@ bool initCamera() {
   // Configure sensor settings
   sensor_t *s = esp_camera_sensor_get();
   if (s) {
-    s->set_framesize(s, FRAMESIZE_VGA);    // 640x480 for wider view
+    s->set_framesize(s, selectedFrameSize);
     s->set_hmirror(s, 1);                  // Horizontal mirror
     s->set_vflip(s, 0);                    // No vertical flip
     s->set_brightness(s, 1);               // Slight brightness boost
     s->set_saturation(s, 0);               // Normal saturation
   }
 
-  Serial.println("[CAM] Camera initialized successfully (VGA streaming, mirrored)");
+  Serial.println("[CAM] Camera initialized successfully");
   return true;
 }
 
@@ -275,22 +281,42 @@ void checkWiFiConnection() {
 // HTTP Handlers
 // =============================================================================
 
+bool acquireStreamClient() {
+  bool accepted = false;
+
+  portENTER_CRITICAL(&streamClientMux);
+  if (activeStreamClients < STREAM_MAX_CLIENTS) {
+    activeStreamClients++;
+    accepted = true;
+  }
+  portEXIT_CRITICAL(&streamClientMux);
+
+  return accepted;
+}
+
+void releaseStreamClient() {
+  portENTER_CRITICAL(&streamClientMux);
+  if (activeStreamClients > 0) {
+    activeStreamClients--;
+  }
+  portEXIT_CRITICAL(&streamClientMux);
+}
+
 // GET /stream - MJPEG stream
 static esp_err_t stream_handler(httpd_req_t *req) {
   // Limit concurrent stream clients
-  if (activeStreamClients >= STREAM_MAX_CLIENTS) {
+  if (!acquireStreamClient()) {
     httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Max stream clients reached");
     return ESP_FAIL;
   }
 
-  activeStreamClients++;
   camera_fb_t *fb = NULL;
   esp_err_t res = ESP_OK;
   char part_buf[64];
 
   res = httpd_resp_set_type(req, _STREAM_CONTENT_TYPE);
   if (res != ESP_OK) {
-    activeStreamClients--;
+    releaseStreamClient();
     return res;
   }
 
@@ -329,7 +355,7 @@ static esp_err_t stream_handler(httpd_req_t *req) {
     esp_task_wdt_reset();
   }
 
-  activeStreamClients--;
+  releaseStreamClient();
   Serial.printf("[STREAM] Client disconnected. Active: %d\n", activeStreamClients);
   return res;
 }
@@ -465,6 +491,7 @@ void startHttpServer() {
 // WiFiManager Callback - Show IP after successful connection
 // =============================================================================
 void configModeCallback(WiFiManager *myWiFiManager) {
+  configPortalStarted = true;
   Serial.println("[PORTAL] Captive portal started");
   Serial.printf("[PORTAL] Connect to: HAZORA_CAM_SETUP\n");
   Serial.printf("[PORTAL] IP: %s\n", WiFi.softAPIP().toString().c_str());
@@ -472,6 +499,7 @@ void configModeCallback(WiFiManager *myWiFiManager) {
 
 void saveConfigCallback() {
   Serial.println("[PORTAL] WiFi credentials saved!");
+  credentialsSavedInPortal = true;
 }
 
 // =============================================================================
@@ -571,10 +599,22 @@ void showSuccessPortal() {
 // =============================================================================
 void setup() {
   Serial.begin(115200);
+  #if 0
   Serial.println();
   Serial.println("");
   Serial.println("========================================");
   Serial.println("  🎥 HAZORA - Hazard Detection System");
+  Serial.println("  ESP32-CAM v2.8 (IP Display in Portal)");
+  Serial.println("========================================");
+  Serial.println("  Network: WiFi Router OR Mobile Hotspot");
+  Serial.println("  Streaming: LOCAL SITE ONLY");
+  Serial.println("========================================");
+  Serial.println("");
+  #endif
+
+  Serial.println();
+  Serial.println("========================================");
+  Serial.println("  HAZORA - Hazard Detection System");
   Serial.println("  ESP32-CAM v2.8 (IP Display in Portal)");
   Serial.println("========================================");
   Serial.println("  Network: WiFi Router OR Mobile Hotspot");
@@ -603,6 +643,24 @@ void setup() {
   Serial.println("[WIFI] Starting WiFiManager...");
   Serial.println("[WIFI] If no credentials saved, connect to AP: HAZORA_CAM_SETUP");
 
+  // Configure Static IP before connecting so DHCP does not assign a different IP first.
+  #if USE_STATIC_IP
+    Serial.println("[WIFI] Configuring Static IP...");
+    IPAddress local_IP(STATIC_IP);
+    IPAddress gateway(GATEWAY_IP);
+    IPAddress subnet(SUBNET_MASK);
+    IPAddress primaryDNS(PRIMARY_DNS);
+    IPAddress secondaryDNS(SECONDARY_DNS);
+
+    if (WiFi.config(local_IP, gateway, subnet, primaryDNS, secondaryDNS)) {
+      Serial.println("[WIFI] Static IP configured successfully");
+    } else {
+      Serial.println("[WIFI] Static IP failed. Using DHCP instead.");
+    }
+  #else
+    Serial.println("[WIFI] Using DHCP (automatic IP assignment)");
+  #endif
+
   // Check if we need portal (no saved credentials)
   bool needsPortal = !wifiManager.autoConnect("HAZORA_CAM_SETUP");
   
@@ -616,8 +674,10 @@ void setup() {
   assignedIP = WiFi.localIP().toString();
   Serial.printf("[WIFI] Connected! IP: %s\n", assignedIP.c_str());
   
-  // Keep AP alive temporarily to show the IP to the user
-  showSuccessPortal();
+  // Keep AP alive temporarily to show the IP only after the setup portal was used.
+  if (configPortalStarted || credentialsSavedInPortal) {
+    showSuccessPortal();
+  }
 
   // Connection successful
   WiFi.setSleep(false);
@@ -633,6 +693,9 @@ void setup() {
   esp_task_wdt_add(NULL);
   Serial.println("[WATCHDOG] Enabled (30s timeout)");
 
+  #if 0
+  // Static IP is configured before autoConnect above.
+  // This old late-configuration block is kept disabled to avoid reconnect bugs.
   // Configure Static IP if enabled
   #if USE_STATIC_IP
     Serial.println("[WIFI] Configuring Static IP...");
@@ -653,6 +716,10 @@ void setup() {
 
   Serial.println("[WIFI] ✅ Connected successfully!");
 
+  #endif
+
+  Serial.println("[WIFI] Connected successfully!");
+
   // --- Camera Initialization ---
   if (!initCamera()) {
     Serial.println("[SETUP] Camera init failed! Restarting in 5 seconds...");
@@ -663,6 +730,7 @@ void setup() {
   // --- Start HTTP Server ---
   startHttpServer();
 
+  #if 0
   Serial.println("========================================");
   Serial.println("  ✅ READY! Site-isolated streaming active");
   Serial.println("========================================");
@@ -698,6 +766,50 @@ void setup() {
     Serial.println("ℹ️  Static IP Mode: This IP won't change");
   #else
     Serial.println("⚠️  DHCP Mode: IP may change after power cycle");
+    Serial.println("   To fix IP permanently:");
+    Serial.println("   1. Note the Gateway IP above");
+    Serial.println("   2. Edit code: USE_STATIC_IP = true");
+    Serial.println("   3. Set GATEWAY_IP to match above");
+    Serial.println("   4. Re-upload code");
+  #endif
+  Serial.println("========================================");
+  #endif
+
+  Serial.println("========================================");
+  Serial.println("  READY! Site-isolated streaming active");
+  Serial.println("========================================");
+  Serial.println("");
+  Serial.println("SITE ISOLATION: Stream is LOCAL ONLY");
+  Serial.println("   Only devices on THIS network can view stream");
+  Serial.println("   Perfect for construction site security.");
+  Serial.println("");
+  Serial.println("NETWORK INFORMATION:");
+  Serial.printf("   IP Address:  %s\n", WiFi.localIP().toString().c_str());
+  Serial.printf("   Gateway:     %s\n", WiFi.gatewayIP().toString().c_str());
+  Serial.printf("   Subnet:      %s\n", WiFi.subnetMask().toString().c_str());
+  Serial.printf("   WiFi SSID:   %s\n", WiFi.SSID().c_str());
+  Serial.printf("   Signal:      %d dBm\n", WiFi.RSSI());
+  Serial.println("");
+  Serial.println("ACCESS URLS:");
+  Serial.printf("   Dashboard:   http://%s\n", WiFi.localIP().toString().c_str());
+  Serial.printf("   Stream:      http://%s:81/stream\n", WiFi.localIP().toString().c_str());
+  Serial.printf("   Capture:     http://%s/capture\n", WiFi.localIP().toString().c_str());
+  Serial.printf("   Status:      http://%s/status\n", WiFi.localIP().toString().c_str());
+  Serial.println("");
+  Serial.println("VIEWING THE STREAM:");
+  Serial.println("   1. Connect your device to the SAME WiFi/hotspot");
+  Serial.printf("   2. Open browser: http://%s\n", WiFi.localIP().toString().c_str());
+  Serial.println("   3. Or enter IP in HAZORA website Live Streams page");
+  Serial.println("");
+  Serial.println("WORKS WITH:");
+  Serial.println("   - Site WiFi Router");
+  Serial.println("   - Mobile Hotspot (Android/iPhone)");
+  Serial.println("   - Portable WiFi Router");
+  Serial.println("");
+  #if USE_STATIC_IP
+    Serial.println("Static IP Mode: This IP will not change");
+  #else
+    Serial.println("DHCP Mode: IP may change after power cycle");
     Serial.println("   To fix IP permanently:");
     Serial.println("   1. Note the Gateway IP above");
     Serial.println("   2. Edit code: USE_STATIC_IP = true");

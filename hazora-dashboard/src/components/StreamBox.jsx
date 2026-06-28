@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { validateIPv4 } from './CameraConfig';
 import '../styles/StreamBox.css';
 
-export default function StreamBox({ id, label, cameraIP, onIPChange }) {
+export default function StreamBox({ id, label, cameraIP, onIPChange, isMain = false, onPromote }) {
   const [status, setStatus] = useState('idle'); // 'idle' | 'loading' | 'connected' | 'failed'
   const [inputValue, setInputValue] = useState('');
   const [error, setError] = useState(null);
@@ -100,10 +100,21 @@ export default function StreamBox({ id, label, cameraIP, onIPChange }) {
     : '';
 
   return (
-    <div className={`stream-box ${status}`}>
+    <div className={`stream-box ${status}${isMain ? ' main' : ''}`}>
       <div className="stream-box-header">
         <span className="stream-box-label">{label}</span>
-        <span className={`stream-box-status-dot ${status}`} title={status}></span>
+        <div className="stream-box-header-actions">
+          <button
+            type="button"
+            className={`stream-box-main-btn${isMain ? ' active' : ''}`}
+            onClick={() => onPromote?.(id)}
+            disabled={isMain}
+            title={isMain ? 'Current big screen' : 'Show on big screen'}
+          >
+            {isMain ? 'Main' : 'Big'}
+          </button>
+          <span className={`stream-box-status-dot ${status}`} title={status}></span>
+        </div>
       </div>
 
       <div className="stream-box-content">

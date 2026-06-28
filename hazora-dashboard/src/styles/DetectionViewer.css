@@ -13,6 +13,9 @@
 .stat { font-size: 0.85rem; padding: 0.4rem 0.75rem; border-radius: 6px; background: var(--bg-secondary); }
 .person-stat { color: var(--success); }
 .face-stat { color: var(--accent); }
+.helmet-stat { color: var(--success); }
+.no-helmet-stat { color: var(--text-secondary); }
+.no-helmet-stat.active { color: #ffffff; background: var(--error); }
 
 .detection-source-img { display: none; }
 .detection-canvas { width: 100%; height: auto; border-radius: 8px; border: 1px solid var(--border); }

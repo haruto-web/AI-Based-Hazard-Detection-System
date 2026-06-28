@@ -1,4 +1,13 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useAuth } from '../context/AuthContext';
+import { useSites } from '../context/SiteContext';
+import {
+  buildIncidentCsv,
+  filterIncidentsByPeriod,
+  getIncidents,
+  INCIDENTS_UPDATED_EVENT,
+  subscribeToIncidents,
+} from '../utils/incidents';
 import '../styles/AnalyticsDashboard.css';
 
 const TIME_PERIODS = ['Last 24 Hours', 'Last 7 Days', 'Last 30 Days'];
@@ -49,26 +58,76 @@ function StatIcon({ type }) {
   }
 }
 
-const STATS_CARDS = [
-  { id: 'workers', label: 'Total Detected Workers', value: 0, format: 'number' },
-  { id: 'compliance', label: 'Hard Hat Compliance Rate', value: 0, format: 'percent' },
-  { id: 'violations', label: 'No Hard Hat Violations', value: 0, format: 'number' },
-  { id: 'gas', label: 'Gas/Smoke Alerts', value: 0, format: 'number' },
-  { id: 'common', label: 'Most Common Hazard', value: 'N/A', format: 'text' },
-];
-
 const INCIDENT_COLUMNS = ['Date', 'Time', 'Hazard Type', 'Camera Source', 'Severity Level'];
 
 const PAGE_SIZE = 20;
 
 export default function AnalyticsDashboard({ readOnly = false }) {
+  const { user } = useAuth();
+  const { activeSite } = useSites();
   const [timePeriod, setTimePeriod] = useState('Last 24 Hours');
-  const [incidents] = useState([]);
+  const [incidents, setIncidents] = useState(() => getIncidents());
   const [currentPage, setCurrentPage] = useState(1);
   const [showExportMenu, setShowExportMenu] = useState(false);
 
-  const totalPages = Math.ceil(incidents.length / PAGE_SIZE) || 1;
-  const paginatedIncidents = incidents.slice(
+  useEffect(() => {
+    const unsubscribe = subscribeToIncidents(user?.uid, setIncidents);
+
+    function refreshIncidents() {
+      setIncidents(getIncidents());
+    }
+
+    window.addEventListener(INCIDENTS_UPDATED_EVENT, refreshIncidents);
+    window.addEventListener('storage', refreshIncidents);
+    return () => {
+      unsubscribe();
+      window.removeEventListener(INCIDENTS_UPDATED_EVENT, refreshIncidents);
+      window.removeEventListener('storage', refreshIncidents);
+    };
+  }, [user?.uid]);
+
+  const filteredIncidents = useMemo(() => {
+    const byPeriod = filterIncidentsByPeriod(incidents, timePeriod);
+    if (!activeSite) return byPeriod;
+    return byPeriod.filter((incident) => !incident.siteName || incident.siteName === activeSite);
+  }, [incidents, timePeriod, activeSite]);
+
+  const statsCards = useMemo(() => {
+    const totalDetectedWorkers = filteredIncidents.reduce(
+      (sum, incident) => sum + (incident.detectedWorkers || 0),
+      0
+    );
+    const noHardHatViolations = filteredIncidents.filter(
+      (incident) => incident.hazardType === 'No Safety Helmet'
+    ).length;
+    const helmetCount = filteredIncidents.reduce(
+      (sum, incident) => sum + (incident.helmets || 0),
+      0
+    );
+    const noHelmetCount = filteredIncidents.reduce(
+      (sum, incident) => sum + (incident.noHelmets || 0),
+      0
+    );
+    const complianceBase = helmetCount + noHelmetCount;
+    const complianceRate = complianceBase > 0 ? (helmetCount / complianceBase) * 100 : 0;
+
+    const hazardCounts = filteredIncidents.reduce((counts, incident) => {
+      counts[incident.hazardType] = (counts[incident.hazardType] || 0) + 1;
+      return counts;
+    }, {});
+    const mostCommonHazard = Object.entries(hazardCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/A';
+
+    return [
+      { id: 'workers', label: 'Total Detected Workers', value: totalDetectedWorkers, format: 'number' },
+      { id: 'compliance', label: 'Hard Hat Compliance Rate', value: complianceRate, format: 'percent' },
+      { id: 'violations', label: 'No Hard Hat Violations', value: noHardHatViolations, format: 'number' },
+      { id: 'gas', label: 'Gas/Smoke Alerts', value: 0, format: 'number' },
+      { id: 'common', label: 'Most Common Hazard', value: mostCommonHazard, format: 'text' },
+    ];
+  }, [filteredIncidents]);
+
+  const totalPages = Math.ceil(filteredIncidents.length / PAGE_SIZE) || 1;
+  const paginatedIncidents = filteredIncidents.slice(
     (currentPage - 1) * PAGE_SIZE,
     currentPage * PAGE_SIZE
   );
@@ -77,6 +136,16 @@ export default function AnalyticsDashboard({ readOnly = false }) {
     if (format === 'percent') return `${value.toFixed(1)}%`;
     if (format === 'number') return value.toLocaleString();
     return value;
+  }
+
+  function downloadReport(filename, text) {
+    const blob = new Blob([text], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
   }
 
   return (
@@ -89,7 +158,7 @@ export default function AnalyticsDashboard({ readOnly = false }) {
           <button
             className="export-btn"
             onClick={() => setShowExportMenu(!showExportMenu)}
-            disabled={incidents.length === 0}
+            disabled={filteredIncidents.length === 0}
             aria-label="Export Report"
           >
             Export Report
@@ -97,9 +166,12 @@ export default function AnalyticsDashboard({ readOnly = false }) {
           {showExportMenu && (
             <div className="export-menu">
               <button className="export-menu-item" onClick={() => setShowExportMenu(false)}>
-                Export as PDF
+                PDF coming soon
               </button>
-              <button className="export-menu-item" onClick={() => setShowExportMenu(false)}>
+              <button className="export-menu-item" onClick={() => {
+                downloadReport('hazora-incident-report.csv', buildIncidentCsv(filteredIncidents));
+                setShowExportMenu(false);
+              }}>
                 Export as CSV
               </button>
             </div>
@@ -126,7 +198,7 @@ export default function AnalyticsDashboard({ readOnly = false }) {
 
       {/* Statistics Cards */}
       <div className="stats-grid">
-        {STATS_CARDS.map((card) => (
+        {statsCards.map((card) => (
           <div key={card.id} className="stat-card">
             <span className="stat-icon" aria-hidden="true">
               <StatIcon type={card.id} />

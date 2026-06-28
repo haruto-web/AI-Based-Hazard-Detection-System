@@ -1,16 +1,45 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
-import * as tf from '@tensorflow/tfjs';
-import * as cocoSsd from '@tensorflow-models/coco-ssd';
-import * as blazeface from '@tensorflow-models/blazeface';
+import { useNotifications } from '../context/NotificationContext';
+import { useSites } from '../context/SiteContext';
+import { useAuth } from '../context/AuthContext';
+import { createIncidentReport } from '../utils/incidents';
+import {
+  buildCaptureUrl,
+  classifyHelmetRegion,
+  clampRegion,
+  drawFaceResult,
+  drawHelmetResult,
+  drawPersonResult,
+  findFaceForPerson,
+  getHelmetRegionFromFace,
+  getHelmetRegionFromPerson,
+  loadPpeDetectionModels,
+} from '../AI/LM_detection/ppeDetection';
 import '../styles/DetectionViewer.css';
+
+const VIOLATION_COOLDOWN_MS = 30000;
+const NO_HELMET_FRAMES_TO_REPORT = 3;
 
 export default function DetectionViewer({ cameraIP, isConnected }) {
   const canvasRef = useRef(null);
+  const cropCanvasRef = useRef(null);
   const timerRef = useRef(null);
+  const lastHelmetAlertRef = useRef(0);
+  const noHelmetFrameCountRef = useRef(0);
+  const { addNotification } = useNotifications();
+  const { activeSite } = useSites();
+  const { user } = useAuth();
   const [cocoModel, setCocoModel] = useState(null);
   const [faceModel, setFaceModel] = useState(null);
+  const [helmetModel, setHelmetModel] = useState(null);
+  const [helmetMetadata, setHelmetMetadata] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [detections, setDetections] = useState({ persons: 0, faces: 0 });
+  const [detections, setDetections] = useState({
+    persons: 0,
+    faces: 0,
+    helmets: 0,
+    noHelmets: 0,
+  });
   const [detecting, setDetecting] = useState(false);
   const [error, setError] = useState(null);
 
@@ -20,15 +49,12 @@ export default function DetectionViewer({ cameraIP, isConnected }) {
       try {
         setLoading(true);
         setError(null);
-        await tf.ready();
+        const models = await loadPpeDetectionModels();
 
-        const [coco, face] = await Promise.all([
-          cocoSsd.load({ base: 'lite_mobilenet_v2' }),
-          blazeface.load(),
-        ]);
-
-        setCocoModel(coco);
-        setFaceModel(face);
+        setCocoModel(models.personModel);
+        setFaceModel(models.faceModel);
+        setHelmetModel(models.helmetModel);
+        setHelmetMetadata(models.helmetMetadata);
         setLoading(false);
       } catch (err) {
         console.error('Failed to load detection models:', err);
@@ -52,7 +78,7 @@ export default function DetectionViewer({ cameraIP, isConnected }) {
 
     try {
       // Fetch a single JPEG frame from the capture endpoint
-      const response = await fetch(`http://${cameraIP}/capture`);
+      const response = await fetch(buildCaptureUrl(cameraIP));
       if (!response.ok) throw new Error('Capture failed');
 
       const blob = await response.blob();
@@ -74,43 +100,79 @@ export default function DetectionViewer({ cameraIP, isConnected }) {
       // Filter for persons only
       const persons = cocoPredictions.filter(p => p.class === 'person');
 
-      // Draw person bounding boxes (green)
-      persons.forEach(prediction => {
-        const [x, y, width, height] = prediction.bbox;
-        ctx.strokeStyle = '#00ff00';
-        ctx.lineWidth = 3;
-        ctx.strokeRect(x, y, width, height);
+      let helmetCount = 0;
+      let noHelmetCount = 0;
 
-        ctx.fillStyle = '#00ff00';
-        ctx.font = 'bold 14px Arial';
-        const label = `Person ${Math.round(prediction.score * 100)}%`;
-        const textWidth = ctx.measureText(label).width;
-        ctx.fillRect(x, y - 22, textWidth + 10, 22);
-        ctx.fillStyle = '#000';
-        ctx.fillText(label, x + 5, y - 6);
-      });
+      // Draw person bounding boxes and helmet indicators.
+      for (const prediction of persons) {
+        drawPersonResult(ctx, prediction);
+
+        const face = findFaceForPerson(prediction, facePredictions);
+        const rawHelmetRegion = face
+          ? getHelmetRegionFromFace(face)
+          : getHelmetRegionFromPerson(prediction);
+        const helmetRegion = clampRegion(rawHelmetRegion, canvas);
+        const cropCanvas = cropCanvasRef.current || document.createElement('canvas');
+        cropCanvasRef.current = cropCanvas;
+        const helmetResult = await classifyHelmetRegion({
+          ctx,
+          canvas,
+          region: helmetRegion,
+          helmetModel,
+          helmetMetadata,
+          cropCanvas,
+        });
+        const hasHelmet = helmetResult.hasHelmet;
+
+        if (hasHelmet) {
+          helmetCount++;
+        } else {
+          noHelmetCount++;
+        }
+
+        drawHelmetResult(ctx, helmetRegion, hasHelmet);
+      }
 
       // Draw face bounding boxes (cyan)
       facePredictions.forEach(face => {
-        const start = face.topLeft;
-        const end = face.bottomRight;
-        const size = [end[0] - start[0], end[1] - start[1]];
-
-        ctx.strokeStyle = '#00d4aa';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(start[0], start[1], size[0], size[1]);
-
-        ctx.fillStyle = '#00d4aa';
-        ctx.font = 'bold 12px Arial';
-        const prob = Math.round(face.probability[0] * 100);
-        const faceLabel = `Face ${prob}%`;
-        const textWidth = ctx.measureText(faceLabel).width;
-        ctx.fillRect(start[0], start[1] - 18, textWidth + 8, 18);
-        ctx.fillStyle = '#000';
-        ctx.fillText(faceLabel, start[0] + 4, start[1] - 4);
+        drawFaceResult(ctx, face);
       });
 
-      setDetections({ persons: persons.length, faces: facePredictions.length });
+      setDetections({
+        persons: persons.length,
+        faces: facePredictions.length,
+        helmets: helmetCount,
+        noHelmets: noHelmetCount,
+      });
+
+      if (noHelmetCount > 0) {
+        noHelmetFrameCountRef.current += 1;
+        const now = Date.now();
+        if (
+          noHelmetFrameCountRef.current >= NO_HELMET_FRAMES_TO_REPORT &&
+          now - lastHelmetAlertRef.current > VIOLATION_COOLDOWN_MS
+        ) {
+          lastHelmetAlertRef.current = now;
+          addNotification({
+            violationType: 'No Safety Helmet',
+            cameraSource: cameraIP,
+            severity: 'high',
+          });
+          createIncidentReport({
+            userId: user?.uid,
+            hazardType: 'No Safety Helmet',
+            cameraSource: cameraIP,
+            severity: 'high',
+            siteName: activeSite,
+            detectedWorkers: persons.length,
+            helmets: helmetCount,
+            noHelmets: noHelmetCount,
+          });
+        }
+      } else {
+        noHelmetFrameCountRef.current = 0;
+      }
+
       imageBitmap.close();
     } catch (err) {
       console.warn('Detection frame error:', err.message);
@@ -120,17 +182,27 @@ export default function DetectionViewer({ cameraIP, isConnected }) {
     if (detecting) {
       timerRef.current = setTimeout(detectFrame, 500);
     }
-  }, [cocoModel, faceModel, cameraIP, detecting]);
+  }, [
+    cocoModel,
+    faceModel,
+    helmetModel,
+    helmetMetadata,
+    cameraIP,
+    detecting,
+    addNotification,
+    activeSite,
+    user?.uid,
+  ]);
 
   // Start/stop detection loop
   useEffect(() => {
-    if (detecting && cocoModel && faceModel && isConnected && cameraIP) {
+    if (detecting && cocoModel && faceModel && helmetModel && isConnected && cameraIP) {
       detectFrame();
     }
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [detecting, cocoModel, faceModel, isConnected, cameraIP, detectFrame]);
+  }, [detecting, cocoModel, faceModel, helmetModel, isConnected, cameraIP, detectFrame]);
 
   function toggleDetection() {
     if (detecting) {
@@ -163,6 +235,10 @@ export default function DetectionViewer({ cameraIP, isConnected }) {
           <div className="detection-stats">
             <span className="stat person-stat">Persons: {detections.persons}</span>
             <span className="stat face-stat">Faces: {detections.faces}</span>
+            <span className="stat helmet-stat">Helmet: {detections.helmets}</span>
+            <span className={`stat no-helmet-stat${detections.noHelmets > 0 ? ' active' : ''}`}>
+              No helmet: {detections.noHelmets}
+            </span>
           </div>
           <canvas ref={canvasRef} className="detection-canvas" />
         </>

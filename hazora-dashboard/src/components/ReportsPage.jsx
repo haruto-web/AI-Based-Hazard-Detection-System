@@ -1,16 +1,61 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useAuth } from '../context/AuthContext';
 import { useSites } from '../context/SiteContext';
+import {
+  buildIncidentCsv,
+  filterIncidentsByPeriod,
+  getIncidents,
+  INCIDENTS_UPDATED_EVENT,
+  subscribeToIncidents,
+} from '../utils/incidents';
 import '../styles/ReportsPage.css';
 
 const PAGE_SIZE = 20;
 
 export default function ReportsPage({ readOnly = false }) {
+  const { user } = useAuth();
   const { sites, activeSite, setActiveSite } = useSites();
-  const [reports] = useState([]);
+  const [incidents, setIncidents] = useState(() => getIncidents());
   const [currentPage, setCurrentPage] = useState(1);
   const [showGenerateDialog, setShowGenerateDialog] = useState(false);
   const [generateSite, setGenerateSite] = useState(activeSite);
   const [generateRange, setGenerateRange] = useState('Last 7 Days');
+
+  useEffect(() => {
+    const unsubscribe = subscribeToIncidents(user?.uid, setIncidents);
+
+    function refreshIncidents() {
+      setIncidents(getIncidents());
+    }
+
+    window.addEventListener(INCIDENTS_UPDATED_EVENT, refreshIncidents);
+    window.addEventListener('storage', refreshIncidents);
+    return () => {
+      unsubscribe();
+      window.removeEventListener(INCIDENTS_UPDATED_EVENT, refreshIncidents);
+      window.removeEventListener('storage', refreshIncidents);
+    };
+  }, [user?.uid]);
+
+  const reports = useMemo(() => {
+    const siteIncidents = incidents.filter((incident) => (
+      !activeSite || !incident.siteName || incident.siteName === activeSite
+    ));
+    const grouped = siteIncidents.reduce((groups, incident) => {
+      const key = incident.date;
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(incident);
+      return groups;
+    }, {});
+
+    return Object.entries(grouped).map(([date, group]) => ({
+      date,
+      timePeriod: 'Daily Incident Report',
+      totalIncidents: group.length,
+      incidents: group,
+      downloadUrl: URL.createObjectURL(new Blob([buildIncidentCsv(group)], { type: 'text/csv;charset=utf-8' })),
+    }));
+  }, [incidents, activeSite]);
 
   const totalPages = Math.ceil(reports.length / PAGE_SIZE) || 1;
   const paginatedReports = reports.slice(
@@ -19,7 +64,17 @@ export default function ReportsPage({ readOnly = false }) {
   );
 
   function handleGenerate() {
-    // Placeholder for future backend integration
+    const generatedIncidents = filterIncidentsByPeriod(
+      incidents.filter((incident) => !generateSite || !incident.siteName || incident.siteName === generateSite),
+      generateRange
+    );
+    const blob = new Blob([buildIncidentCsv(generatedIncidents)], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `hazora-${generateRange.toLowerCase().replace(/\s+/g, '-')}-report.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
     setShowGenerateDialog(false);
   }
 
@@ -80,7 +135,7 @@ export default function ReportsPage({ readOnly = false }) {
                   <td>{report.timePeriod}</td>
                   <td>{report.totalIncidents}</td>
                   <td>
-                    <a href={report.downloadUrl || '#'} className="download-link">
+                    <a href={report.downloadUrl || '#'} className="download-link" download={`hazora-${report.date.replace(/\//g, '-')}-report.csv`}>
                       Download
                     </a>
                   </td>
