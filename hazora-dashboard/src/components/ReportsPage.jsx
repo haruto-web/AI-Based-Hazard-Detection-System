@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { useSites } from '../context/SiteContext';
 import {
   buildIncidentCsv,
   filterIncidentsByPeriod,
@@ -14,11 +13,9 @@ const PAGE_SIZE = 20;
 
 export default function ReportsPage({ readOnly = false }) {
   const { user } = useAuth();
-  const { sites, activeSite, setActiveSite } = useSites();
   const [incidents, setIncidents] = useState(() => getIncidents());
   const [currentPage, setCurrentPage] = useState(1);
   const [showGenerateDialog, setShowGenerateDialog] = useState(false);
-  const [generateSite, setGenerateSite] = useState(activeSite);
   const [generateRange, setGenerateRange] = useState('Last 7 Days');
 
   useEffect(() => {
@@ -38,10 +35,7 @@ export default function ReportsPage({ readOnly = false }) {
   }, [user?.uid]);
 
   const reports = useMemo(() => {
-    const siteIncidents = incidents.filter((incident) => (
-      !activeSite || !incident.siteName || incident.siteName === activeSite
-    ));
-    const grouped = siteIncidents.reduce((groups, incident) => {
+    const grouped = incidents.reduce((groups, incident) => {
       const key = incident.date;
       if (!groups[key]) groups[key] = [];
       groups[key].push(incident);
@@ -55,7 +49,7 @@ export default function ReportsPage({ readOnly = false }) {
       incidents: group,
       downloadUrl: URL.createObjectURL(new Blob([buildIncidentCsv(group)], { type: 'text/csv;charset=utf-8' })),
     }));
-  }, [incidents, activeSite]);
+  }, [incidents]);
 
   const totalPages = Math.ceil(reports.length / PAGE_SIZE) || 1;
   const paginatedReports = reports.slice(
@@ -64,10 +58,7 @@ export default function ReportsPage({ readOnly = false }) {
   );
 
   function handleGenerate() {
-    const generatedIncidents = filterIncidentsByPeriod(
-      incidents.filter((incident) => !generateSite || !incident.siteName || incident.siteName === generateSite),
-      generateRange
-    );
+    const generatedIncidents = filterIncidentsByPeriod(incidents, generateRange);
     const blob = new Blob([buildIncidentCsv(generatedIncidents)], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -92,21 +83,6 @@ export default function ReportsPage({ readOnly = false }) {
               Generate New Report
             </button>
           )}
-        </div>
-        <div className="site-selector">
-          <label htmlFor="site-select">Site Name:</label>
-          <select
-            id="site-select"
-            value={activeSite}
-            onChange={(e) => {
-              setActiveSite(e.target.value);
-              setCurrentPage(1);
-            }}
-          >
-            {sites.map((site) => (
-              <option key={site.id} value={site.name}>{site.name}</option>
-            ))}
-          </select>
         </div>
       </div>
 
@@ -180,18 +156,6 @@ export default function ReportsPage({ readOnly = false }) {
           <div className="dialog" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
             <h3 className="dialog-title">Generate New Report</h3>
 
-            <div className="dialog-field">
-              <label htmlFor="gen-site">Site</label>
-              <select
-                id="gen-site"
-                value={generateSite}
-                onChange={(e) => setGenerateSite(e.target.value)}
-              >
-                {sites.map((site) => (
-                  <option key={site.id} value={site.name}>{site.name}</option>
-                ))}
-              </select>
-            </div>
 
             <div className="dialog-field">
               <label htmlFor="gen-range">Time Range</label>

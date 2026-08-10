@@ -1,7 +1,3 @@
-import * as tf from '@tensorflow/tfjs';
-import * as cocoSsd from '@tensorflow-models/coco-ssd';
-import * as blazeface from '@tensorflow-models/blazeface';
-
 export const HELMET_MODEL_URL = '/models/helmet/model.json';
 export const HELMET_METADATA_URL = '/models/helmet/metadata.json';
 
@@ -22,7 +18,18 @@ export function buildCaptureUrl(value) {
   }
 }
 
+async function importModule(path) {
+  const module = await import(path);
+  return module.default ?? module;
+}
+
 export async function loadPpeDetectionModels() {
+  const [tf, cocoSsd, blazeface] = await Promise.all([
+    importModule('@tensorflow/tfjs'),
+    importModule('@tensorflow-models/coco-ssd'),
+    importModule('@tensorflow-models/blazeface'),
+  ]);
+
   await tf.ready();
 
   const [personModel, faceModel, helmetModel, helmetMetaResponse] = await Promise.all([

@@ -145,9 +145,14 @@ export default function StreamBox({ id, label, cameraIP, onIPChange, isMain = fa
               </svg>
             </div>
             <p>Connection failed</p>
-            <button className="retry-btn" onClick={() => onIPChange(id, cameraIP)}>
-              Retry
-            </button>
+            <div className="stream-box-failed-actions">
+              <button className="retry-btn" onClick={() => onIPChange(id, cameraIP)}>
+                Retry
+              </button>
+              <button className="stream-box-disconnect-btn" onClick={handleDisconnect}>
+                ✕
+              </button>
+            </div>
           </div>
         )}
 
@@ -184,7 +189,7 @@ export default function StreamBox({ id, label, cameraIP, onIPChange, isMain = fa
           placeholder="IP or stream URL"
           disabled={status === 'loading'}
         />
-        {status === 'connected' ? (
+        {status === 'connected' || status === 'failed' ? (
           <button type="button" className="stream-box-disconnect-btn" onClick={handleDisconnect}>
             ✕
           </button>

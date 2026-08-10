@@ -17,3 +17,37 @@
 .collapsible-content ol { padding: 0 1.25rem 1.25rem 2.5rem; margin: 0; font-size: 0.85rem; color: var(--text-secondary); line-height: 1.8; }
 .collapsible-content ol li { margin-bottom: 0.25rem; }
 .collapsible-content strong { color: var(--text-primary); }
+
+.saved-camera-sites {
+  border-top: 1px solid var(--border);
+  margin: 0 1.25rem 1.25rem;
+  padding-top: 1rem;
+}
+
+.saved-camera-sites-title {
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin: 0 0 0.65rem;
+}
+
+.saved-camera-link {
+  display: block;
+  color: var(--accent);
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 0.45rem;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
+
+.saved-camera-link:hover {
+  text-decoration: underline;
+}
+
+.saved-camera-empty {
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  margin: 0;
+}

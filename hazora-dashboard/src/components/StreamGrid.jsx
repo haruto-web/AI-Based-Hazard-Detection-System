@@ -5,15 +5,7 @@ import '../styles/StreamGrid.css';
 const STREAM_COUNT = 3;
 const MAIN_STREAM_KEY = 'hazora_main_stream';
 
-export default function StreamGrid({ cameras, onCameraIPChange }) {
-  const [mainStreamId, setMainStreamId] = useState(() => {
-    try {
-      const saved = Number(localStorage.getItem(MAIN_STREAM_KEY));
-      return saved >= 1 && saved <= STREAM_COUNT ? saved : 1;
-    } catch {
-      return 1;
-    }
-  });
+export default function StreamGrid({ cameras, mainStreamId, onCameraIPChange, onMainStreamChange }) {
 
   const streams = Array.from({ length: STREAM_COUNT }, (_, i) => ({
     id: i + 1,
@@ -27,7 +19,7 @@ export default function StreamGrid({ cameras, onCameraIPChange }) {
   ].filter(Boolean);
 
   function handleMainStreamChange(streamId) {
-    setMainStreamId(streamId);
+    onMainStreamChange?.(streamId);
     try {
       localStorage.setItem(MAIN_STREAM_KEY, String(streamId));
     } catch {

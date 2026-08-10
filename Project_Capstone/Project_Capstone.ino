@@ -20,6 +20,7 @@
 #include "esp_task_wdt.h"
 #include <WiFi.h>
 #include <WiFiManager.h>
+#include <DNSServer.h>
 
 // =============================================================================
 // AI-Thinker ESP32-CAM Pin Definitions
@@ -50,6 +51,9 @@
 #define WATCHDOG_TIMEOUT_S        30      // Watchdog timeout in seconds
 #define STREAM_MAX_CLIENTS        3       // Max simultaneous stream clients
 #define FRAME_TIMEOUT_MS          5000    // Max time to wait for a frame
+#define SETUP_AP_SSID             "HAZORA_CAM_SETUP"
+#define SETUP_AP_PASSWORD         "00112233"   // Must be 8+ characters
+#define SUCCESS_PORTAL_TIMEOUT    180000       // Show camera IP page for 3 minutes
 
 // =============================================================================
 // Static IP Configuration
@@ -135,6 +139,7 @@ h1 {font-size: 1.5rem;margin-bottom: 0.5rem;color: #f57c00;}
 <h1>HAZORA Camera Monitor</h1>
 <div class="status"><div class="status-dot"></div><span class="info">Live</span></div>
 <p class="info">Device IP: <span id="ip"></span></p>
+<p class="info">Camera Website: <a id="camera-url" style="color:#f57c00;" target="_blank" rel="noreferrer"></a></p>
 <div class="stream-container">
 <img id="stream" alt="Live Camera Stream">
 </div>
@@ -146,6 +151,8 @@ h1 {font-size: 1.5rem;margin-bottom: 0.5rem;color: #f57c00;}
 <script>
 var host = window.location.hostname;
 document.getElementById('ip').textContent = host;
+document.getElementById('camera-url').textContent = 'http://' + host;
+document.getElementById('camera-url').href = 'http://' + host;
 document.getElementById('stream').src = 'http://' + host + ':81/stream';
 function resetWiFi() {
   if (confirm('Reset Wi-Fi credentials? The device will restart in setup mode.')) {
@@ -391,12 +398,14 @@ static esp_err_t status_handler(httpd_req_t *req) {
   unsigned long uptime = (millis() - uptimeStart) / 1000;
 
   snprintf(json, sizeof(json),
-    "{\"uptime\":%lu,\"freeHeap\":%u,\"rssi\":%d,\"activeClients\":%d,\"totalFrames\":%lu,\"ip\":\"%s\",\"ssid\":\"%s\"}",
+    "{\"uptime\":%lu,\"freeHeap\":%u,\"rssi\":%d,\"activeClients\":%d,\"totalFrames\":%lu,\"ip\":\"%s\",\"cameraUrl\":\"http://%s\",\"streamUrl\":\"http://%s:81/stream\",\"ssid\":\"%s\"}",
     uptime,
     ESP.getFreeHeap(),
     WiFi.RSSI(),
     activeStreamClients,
     totalFrames,
+    WiFi.localIP().toString().c_str(),
+    WiFi.localIP().toString().c_str(),
     WiFi.localIP().toString().c_str(),
     WiFi.SSID().c_str()
   );
@@ -507,9 +516,12 @@ void saveConfigCallback() {
 // =============================================================================
 #include <WebServer.h>
 WebServer successServer(80);
+DNSServer successDnsServer;
+const byte DNS_PORT = 53;
 
 void handleSuccessPage() {
   String ip = WiFi.localIP().toString();
+  String cameraUrl = "http://" + ip;
   String html = "<!DOCTYPE html><html><head>"
     "<meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'>"
     "<title>Connected!</title>"
@@ -521,6 +533,7 @@ void handleSuccessPage() {
     "p{color:#94a3b8;font-size:0.95rem;margin-bottom:1.5rem;}"
     ".lbl{color:#64748b;font-size:0.85rem;margin-bottom:0.5rem;}"
     ".ip{font-size:2.2rem;font-weight:700;color:#22c55e;letter-spacing:2px;margin-bottom:2rem;font-family:monospace;}"
+    ".url{display:block;color:#38bdf8;font-size:1rem;font-weight:700;margin:-1rem 0 1.5rem;text-decoration:none;overflow-wrap:anywhere;}"
     ".info{background:#243351;border-radius:10px;padding:1.2rem;text-align:left;margin-bottom:1.5rem;}"
     ".info p{margin-bottom:0.8rem;font-size:0.9rem;color:#cbd5e1;}"
     ".info p:last-child{margin-bottom:0;}"
@@ -534,11 +547,13 @@ void handleSuccessPage() {
     "<p>Camera is now online</p>"
     "<div class='lbl'>Camera IP Address:</div>"
     "<div class='ip'>" + ip + "</div>"
+    "<div class='lbl'>Camera Website:</div>"
+    "<a class='url' href='" + cameraUrl + "'>" + cameraUrl + "</a>"
     "<div class='info'>"
     "<p><strong>Next Steps:</strong></p>"
-    "<p>1. Write down or screenshot the IP above</p>"
-    "<p>2. Enter this IP in the Hazora Dashboard</p>"
-    "<p>3. Make sure your device is on the same WiFi</p>"
+    "<p>1. Save the camera website URL above</p>"
+    "<p>2. Open it from any browser on the same WiFi</p>"
+    "<p>3. Enter the IP in the Hazora Dashboard stream box</p>"
     "</div>"
     "<a href='/done' class='btn'>Done</a>"
     "<p class='note'>Click Done after you've saved the IP address.</p>"
@@ -557,16 +572,28 @@ void handleDone() {
 }
 
 void showSuccessPortal() {
+  portalDone = false;
+
   // Start AP mode alongside STA (dual mode)
   WiFi.mode(WIFI_AP_STA);
-  WiFi.softAP("HAZORA_CAM_SETUP");
+  WiFi.softAP(SETUP_AP_SSID, SETUP_AP_PASSWORD);
   delay(500);
+
+  IPAddress apIP = WiFi.softAPIP();
   
-  Serial.printf("[PORTAL] Success page AP started at: %s\n", WiFi.softAPIP().toString().c_str());
+  Serial.printf("[PORTAL] Success page AP started at: %s\n", apIP.toString().c_str());
   Serial.printf("[PORTAL] Showing IP: %s\n", WiFi.localIP().toString().c_str());
+
+  // Captive portal redirect: any phone/browser request goes to the IP success page.
+  successDnsServer.start(DNS_PORT, "*", apIP);
   
   // Start webserver on AP
   successServer.on("/", handleSuccessPage);
+  successServer.on("/generate_204", handleSuccessPage);          // Android
+  successServer.on("/gen_204", handleSuccessPage);               // Android/Chrome
+  successServer.on("/hotspot-detect.html", handleSuccessPage);   // iOS/macOS
+  successServer.on("/connecttest.txt", handleSuccessPage);       // Windows
+  successServer.on("/ncsi.txt", handleSuccessPage);              // Windows
   successServer.on("/done", handleDone);
   successServer.onNotFound(handleSuccessPage);  // Any URL shows success page
   successServer.begin();
@@ -575,14 +602,16 @@ void showSuccessPortal() {
   
   // Keep serving until user clicks Done or 2 minutes timeout
   unsigned long startTime = millis();
-  unsigned long timeout = 120000;  // 2 minutes
+  unsigned long timeout = SUCCESS_PORTAL_TIMEOUT;
   
   while (!portalDone && (millis() - startTime < timeout)) {
+    successDnsServer.processNextRequest();
     successServer.handleClient();
     delay(10);
   }
   
   // Cleanup: stop AP, switch to STA only
+  successDnsServer.stop();
   successServer.stop();
   WiFi.softAPdisconnect(true);
   WiFi.mode(WIFI_STA);
@@ -629,7 +658,7 @@ void setup() {
   digitalWrite(LED_GPIO_NUM, LOW);
 
   // --- WiFiManager Provisioning Flow ---
-  wifiManager.setConfigPortalTimeout(180);
+  wifiManager.setConfigPortalTimeout(0);
   wifiManager.setConnectTimeout(15);
   wifiManager.setConnectRetries(3);
   
@@ -641,7 +670,8 @@ void setup() {
   wifiManager.setSaveConfigCallback(saveConfigCallback);
 
   Serial.println("[WIFI] Starting WiFiManager...");
-  Serial.println("[WIFI] If no credentials saved, connect to AP: HAZORA_CAM_SETUP");
+  Serial.printf("[WIFI] If no credentials saved, connect to AP: %s\n", SETUP_AP_SSID);
+  Serial.printf("[WIFI] Setup AP Password: %s\n", SETUP_AP_PASSWORD);
 
   // Configure Static IP before connecting so DHCP does not assign a different IP first.
   #if USE_STATIC_IP
@@ -662,7 +692,7 @@ void setup() {
   #endif
 
   // Check if we need portal (no saved credentials)
-  bool needsPortal = !wifiManager.autoConnect("HAZORA_CAM_SETUP");
+  bool needsPortal = !wifiManager.autoConnect(SETUP_AP_SSID, SETUP_AP_PASSWORD);
   
   if (needsPortal) {
     Serial.println("[WIFI] Portal timed out - restarting device...");
@@ -674,10 +704,8 @@ void setup() {
   assignedIP = WiFi.localIP().toString();
   Serial.printf("[WIFI] Connected! IP: %s\n", assignedIP.c_str());
   
-  // Keep AP alive temporarily to show the IP only after the setup portal was used.
-  if (configPortalStarted || credentialsSavedInPortal) {
-    showSuccessPortal();
-  }
+  // Show the assigned IP and camera website after every successful boot/connection.
+  showSuccessPortal();
 
   // Connection successful
   WiFi.setSleep(false);

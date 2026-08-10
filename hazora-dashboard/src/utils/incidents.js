@@ -32,7 +32,6 @@ export async function createIncidentReport({
   hazardType,
   cameraSource,
   severity = 'high',
-  siteName = '',
   detectedWorkers = 0,
   helmets = 0,
   noHelmets = 0,
@@ -46,7 +45,6 @@ export async function createIncidentReport({
     hazardType,
     cameraSource,
     severity,
-    siteName,
     detectedWorkers,
     helmets,
     noHelmets,
@@ -113,11 +111,10 @@ export function filterIncidentsByPeriod(incidents, period) {
 
 export function buildIncidentCsv(incidents) {
   const rows = [
-    ['Date', 'Time', 'Site', 'Hazard Type', 'Camera Source', 'Severity', 'Workers', 'Helmet', 'No Helmet'],
+    ['Date', 'Time', 'Hazard Type', 'Camera Source', 'Severity', 'Workers', 'Helmet', 'No Helmet'],
     ...incidents.map((incident) => [
       incident.date,
       incident.time,
-      incident.siteName || '',
       incident.hazardType,
       incident.cameraSource,
       incident.severity,

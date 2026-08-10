@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { useSites } from '../context/SiteContext';
 import {
   buildIncidentCsv,
   filterIncidentsByPeriod,
@@ -64,7 +63,6 @@ const PAGE_SIZE = 20;
 
 export default function AnalyticsDashboard({ readOnly = false }) {
   const { user } = useAuth();
-  const { activeSite } = useSites();
   const [timePeriod, setTimePeriod] = useState('Last 24 Hours');
   const [incidents, setIncidents] = useState(() => getIncidents());
   const [currentPage, setCurrentPage] = useState(1);
@@ -87,10 +85,8 @@ export default function AnalyticsDashboard({ readOnly = false }) {
   }, [user?.uid]);
 
   const filteredIncidents = useMemo(() => {
-    const byPeriod = filterIncidentsByPeriod(incidents, timePeriod);
-    if (!activeSite) return byPeriod;
-    return byPeriod.filter((incident) => !incident.siteName || incident.siteName === activeSite);
-  }, [incidents, timePeriod, activeSite]);
+    return filterIncidentsByPeriod(incidents, timePeriod);
+  }, [incidents, timePeriod]);
 
   const statsCards = useMemo(() => {
     const totalDetectedWorkers = filteredIncidents.reduce(

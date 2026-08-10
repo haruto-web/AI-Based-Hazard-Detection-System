@@ -1,13 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { signOut } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
-import { auth, db } from '../firebase';
+import { auth } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { canAccess, hasFullAccess } from '../config/roles';
+import { useCameraSettings } from '../hooks/useCameraSettings';
 import StreamGrid from '../components/StreamGrid';
 import ConnectionIndicator from '../components/ConnectionIndicator';
-import DetectionViewer from '../components/DetectionViewer';
+import hazoraLogo from '../assets/hazora-logo.png';
+const DetectionViewer = lazy(() => import('../components/DetectionViewer'));
 import CollapsibleGuide from '../components/CollapsibleGuide';
 import Sidebar from '../components/Sidebar';
 import TopNavBar from '../components/TopNavBar';
@@ -19,18 +20,25 @@ import Footer from '../components/Footer';
 import OnboardingTour from '../components/OnboardingTour';
 import '../styles/Dashboard.css';
 
-const STREAM_COUNT = 3;
-const STORAGE_KEY = 'hazora_cameras';
-
 export default function Dashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [cameras, setCameras] = useState(Array(STREAM_COUNT).fill(''));
-  const [ipLoading, setIpLoading] = useState(true);
   const [activeView, setActiveView] = useState('dashboard');
   const [showTour, setShowTour] = useState(false);
-  const [userRole, setUserRole] = useState('');
-  const [userName, setUserName] = useState('');
+  const {
+    cameras,
+    cameraIP,
+    connectedCount,
+    mainStreamId,
+    userRole,
+    handleCameraIPChange,
+    handleMainStreamChange,
+  } = useCameraSettings(user.uid);
+
+  const streamCount = cameras.length;
+  const savedCameraLinks = cameras
+    .map((camera, index) => ({ ip: camera, index }))
+    .filter(({ ip }) => ip && !ip.startsWith('http://') && !ip.startsWith('https://'));
 
   // Check tour status per user
   useEffect(() => {
@@ -44,92 +52,7 @@ export default function Dashboard() {
     }
   }, [user.uid]);
 
-  // Derive connection status from cameras array
-  const connectedCount = cameras.filter(ip => ip).length;
   const connectionStatus = connectedCount > 0 ? 'connected' : 'disconnected';
-
-  // Load camera IPs from localStorage and Firestore on mount
-  useEffect(() => {
-    async function loadCameras() {
-      // Try localStorage first
-      try {
-        const stored = localStorage.getItem(STORAGE_KEY);
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          if (Array.isArray(parsed) && parsed.length === STREAM_COUNT) {
-            setCameras(parsed);
-            setIpLoading(false);
-          }
-        }
-        // Migrate old single-IP format
-        const oldIP = localStorage.getItem('hazora_camera_ip');
-        if (oldIP && !stored) {
-          const migrated = [oldIP, '', ''];
-          setCameras(migrated);
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
-          localStorage.removeItem('hazora_camera_ip');
-          setIpLoading(false);
-        }
-      } catch (storageErr) {
-        // localStorage unavailable
-      }
-
-      // Then try Firestore
-      try {
-        const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Firestore timeout')), 5000)
-        );
-        const userDoc = await Promise.race([
-          getDoc(doc(db, 'users', user.uid)),
-          timeoutPromise,
-        ]);
-        if (userDoc.exists()) {
-          const data = userDoc.data();
-          if (data.role) {
-            setUserRole(data.role);
-          }
-          if (data.fullName) {
-            setUserName(data.fullName);
-          }
-          if (data.cameras && Array.isArray(data.cameras)) {
-            setCameras(data.cameras);
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(data.cameras));
-          } else if (data.cameraIP) {
-            // Migrate old single-IP Firestore format
-            const migrated = [data.cameraIP, '', ''];
-            setCameras(migrated);
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
-          }
-        }
-      } catch (err) {
-        console.warn('Firestore load failed or timed out:', err.message);
-      } finally {
-        setIpLoading(false);
-      }
-    }
-
-    loadCameras();
-  }, [user.uid]);
-
-  function handleCameraIPChange(streamId, newIP) {
-    setCameras(prev => {
-      const updated = [...prev];
-      updated[streamId - 1] = newIP;
-
-      // Persist to localStorage immediately
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-      } catch (e) {
-        // localStorage unavailable
-      }
-
-      // Persist to Firestore in background
-      setDoc(doc(db, 'users', user.uid), { cameras: updated }, { merge: true })
-        .catch(err => console.warn('Firestore save failed:', err.message));
-
-      return updated;
-    });
-  }
 
   async function handleLogout() {
     await signOut(auth);
@@ -140,11 +63,11 @@ export default function Dashboard() {
     <div className="dashboard">
       <header className="dashboard-header">
         <div className="header-left">
-          <img src="/hazora-logo.png" alt="Hazora Logo" className="header-logo" />
+          <img src={hazoraLogo} alt="Hazora Logo" className="header-logo" />
           <h1>HAZORA</h1>
           <ConnectionIndicator status={connectionStatus} />
           {connectedCount > 0 && (
-            <span className="camera-count">{connectedCount}/{STREAM_COUNT} cameras</span>
+            <span className="camera-count">{connectedCount}/{streamCount} cameras</span>
           )}
         </div>
         <div className="header-right">
@@ -171,7 +94,9 @@ export default function Dashboard() {
                 <section className="stream-section">
                   <StreamGrid
                     cameras={cameras}
+                    mainStreamId={mainStreamId}
                     onCameraIPChange={handleCameraIPChange}
+                    onMainStreamChange={handleMainStreamChange}
                   />
                 </section>
 
@@ -181,15 +106,33 @@ export default function Dashboard() {
                       <li>Power on the ESP32-CAM</li>
                       <li>Connect your phone/laptop to Wi-Fi: <strong>HAZORA_CAM_SETUP</strong></li>
                       <li>A setup page opens — enter your Wi-Fi name and password</li>
-                      <li>The camera connects and shows its IP in Serial Monitor</li>
+                      <li>The camera connects and shows its IP and website URL</li>
+                      <li>Open the camera website URL below if you are on the same network</li>
                       <li>Enter the IP in any stream box and click the arrow to connect</li>
                     </ol>
+                    <div className="saved-camera-sites">
+                      <p className="saved-camera-sites-title">Saved camera website</p>
+                      {savedCameraLinks.length > 0 ? (
+                        savedCameraLinks.map(({ ip, index }) => (
+                          <a
+                            key={`${ip}-${index}`}
+                            className="saved-camera-link"
+                            href={`http://${ip}`}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Stream {index + 1}: http://{ip}
+                          </a>
+                        ))
+                      ) : (
+                        <p className="saved-camera-empty">Connect a camera IP to save its website link here.</p>
+                      )}
+                    </div>
                   </CollapsibleGuide>
 
-                  <DetectionViewer
-                    cameraIP={cameras[0]}
-                    isConnected={connectedCount > 0}
-                  />
+                  <Suspense fallback={<div>Loading AI detection viewer…</div>}>
+                    <DetectionViewer cameraIP={cameraIP} isConnected={connectedCount > 0} />
+                  </Suspense>
                 </section>
               </div>
             )}
