@@ -1,3 +1,4 @@
+import { jsPDF } from 'jspdf';
 import { addDoc, collection, limit, onSnapshot, orderBy, query, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 
@@ -127,4 +128,57 @@ export function buildIncidentCsv(incidents) {
   return rows
     .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
     .join('\n');
+}
+
+export function buildIncidentPdf(incidents, title = 'Hazora Safety Report') {
+  const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const margin = 42;
+  const lineHeight = 18;
+
+  doc.setFontSize(18);
+  doc.setTextColor(20, 34, 52);
+  doc.text(title, margin, margin);
+
+  doc.setFontSize(10);
+  doc.setTextColor(70, 80, 90);
+  doc.text(`Generated: ${new Date().toLocaleString()}`, margin, margin + 20);
+
+  let y = margin + 42;
+  doc.setDrawColor(230, 233, 238);
+  doc.setFillColor(245, 248, 252);
+  doc.rect(margin, y - 10, pageWidth - margin * 2, 22, 'F');
+  doc.setTextColor(40, 50, 60);
+  doc.text('Date', margin + 10, y + 4);
+  doc.text('Time', margin + 90, y + 4);
+  doc.text('Hazard', margin + 150, y + 4);
+  doc.text('Camera', margin + 260, y + 4);
+  doc.text('Severity', margin + 410, y + 4);
+  y += 18;
+
+  const rows = incidents.length > 0 ? incidents : [{
+    date: 'N/A',
+    time: 'N/A',
+    hazardType: 'No incidents',
+    cameraSource: 'N/A',
+    severity: 'info',
+  }];
+
+  rows.forEach((incident) => {
+    if (y > 760) {
+      doc.addPage();
+      y = margin;
+    }
+
+    doc.setFontSize(9);
+    doc.setTextColor(55, 65, 81);
+    doc.text(String(incident.date || 'N/A'), margin + 10, y + 10);
+    doc.text(String(incident.time || 'N/A'), margin + 90, y + 10);
+    doc.text(String(incident.hazardType || 'N/A'), margin + 150, y + 10);
+    doc.text(String(incident.cameraSource || 'N/A'), margin + 260, y + 10);
+    doc.text(String(incident.severity || 'N/A'), margin + 410, y + 10);
+    y += lineHeight;
+  });
+
+  return doc;
 }

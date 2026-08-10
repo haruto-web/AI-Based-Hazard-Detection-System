@@ -1,3 +1,7 @@
+import * as tf from '@tensorflow/tfjs';
+import * as cocoSsd from '@tensorflow-models/coco-ssd';
+import * as blazeface from '@tensorflow-models/blazeface';
+
 export const HELMET_MODEL_URL = '/models/helmet/model.json';
 export const HELMET_METADATA_URL = '/models/helmet/metadata.json';
 
@@ -18,18 +22,7 @@ export function buildCaptureUrl(value) {
   }
 }
 
-async function importModule(path) {
-  const module = await import(path);
-  return module.default ?? module;
-}
-
 export async function loadPpeDetectionModels() {
-  const [tf, cocoSsd, blazeface] = await Promise.all([
-    importModule('@tensorflow/tfjs'),
-    importModule('@tensorflow-models/coco-ssd'),
-    importModule('@tensorflow-models/blazeface'),
-  ]);
-
   await tf.ready();
 
   const [personModel, faceModel, helmetModel, helmetMetaResponse] = await Promise.all([
@@ -38,6 +31,7 @@ export async function loadPpeDetectionModels() {
     tf.loadLayersModel(HELMET_MODEL_URL),
     fetch(HELMET_METADATA_URL),
   ]);
+
   const helmetMetadata = await helmetMetaResponse.json();
 
   return {
@@ -105,6 +99,36 @@ function getHelmetRegionStats(imageData) {
     colorScore: visiblePixels > 0 ? helmetPixels / visiblePixels : 0,
     lowerColorScore: lowerVisiblePixels > 0 ? lowerHelmetPixels / lowerVisiblePixels : 0,
     darkScore: lowerVisiblePixels > 0 ? darkPixels / lowerVisiblePixels : 0,
+  };
+}
+
+export function resolveHelmetDecision({
+  helmetScore,
+  noHelmetScore,
+  regionStats,
+  colorFallback,
+}) {
+  const helmetScoreValue = helmetScore || 0;
+  const noHelmetScoreValue = noHelmetScore || 0;
+  const lowerColorScore = regionStats?.lowerColorScore || 0;
+  const colorScore = regionStats?.colorScore || 0;
+  const darkScore = regionStats?.darkScore || 0;
+
+  const strongHelmetEvidence =
+    helmetScoreValue >= 0.65 &&
+    helmetScoreValue > noHelmetScoreValue + 0.12 &&
+    lowerColorScore >= 0.12;
+
+  const fallbackHelmet =
+    colorFallback &&
+    (lowerColorScore >= 0.18 || colorScore >= HELMET_COLOR_THRESHOLD) &&
+    darkScore < 0.18;
+
+  const hasHelmet = strongHelmetEvidence || fallbackHelmet;
+
+  return {
+    hasHelmet,
+    confidence: Math.max(helmetScoreValue, noHelmetScoreValue),
   };
 }
 
@@ -246,15 +270,14 @@ export async function classifyHelmetRegion({
 
     const helmetScore = helmetPrediction?.probability || 0;
     const noHelmetScore = noHelmetPrediction?.probability || 0;
-    const hasHelmet =
-      helmetScore >= HELMET_CONFIDENCE_THRESHOLD &&
-      helmetScore > noHelmetScore + 0.18 &&
-      regionStats.lowerColorScore >= 0.1;
+    const decision = resolveHelmetDecision({
+      helmetScore,
+      noHelmetScore,
+      regionStats,
+      colorFallback: hasHelmetByColor(ctx, canvas, region),
+    });
 
-    return {
-      hasHelmet,
-      confidence: Math.max(helmetScore, noHelmetScore),
-    };
+    return decision;
   } finally {
     input.dispose();
   }

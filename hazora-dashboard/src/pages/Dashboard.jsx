@@ -35,10 +35,25 @@ export default function Dashboard() {
     handleMainStreamChange,
   } = useCameraSettings(user.uid);
 
+  function getCameraWebsite(camera) {
+    if (!camera) return '';
+
+    if (camera.startsWith('http://') || camera.startsWith('https://')) {
+      try {
+        const url = new URL(camera);
+        return `${url.protocol}//${url.hostname}`;
+      } catch {
+        return camera;
+      }
+    }
+
+    return `http://${camera}`;
+  }
+
   const streamCount = cameras.length;
   const savedCameraLinks = cameras
-    .map((camera, index) => ({ ip: camera, index }))
-    .filter(({ ip }) => ip && !ip.startsWith('http://') && !ip.startsWith('https://'));
+    .map((camera, index) => ({ website: getCameraWebsite(camera), index }))
+    .filter(({ website }) => website);
 
   // Check tour status per user
   useEffect(() => {
@@ -113,15 +128,15 @@ export default function Dashboard() {
                     <div className="saved-camera-sites">
                       <p className="saved-camera-sites-title">Saved camera website</p>
                       {savedCameraLinks.length > 0 ? (
-                        savedCameraLinks.map(({ ip, index }) => (
+                        savedCameraLinks.map(({ website, index }) => (
                           <a
-                            key={`${ip}-${index}`}
+                            key={`${website}-${index}`}
                             className="saved-camera-link"
-                            href={`http://${ip}`}
+                            href={website}
                             target="_blank"
                             rel="noreferrer"
                           >
-                            Stream {index + 1}: http://{ip}
+                            Stream {index + 1}: {website}
                           </a>
                         ))
                       ) : (

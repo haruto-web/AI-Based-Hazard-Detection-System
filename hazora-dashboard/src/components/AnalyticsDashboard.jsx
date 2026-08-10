@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import {
   buildIncidentCsv,
+  buildIncidentPdf,
   filterIncidentsByPeriod,
   getIncidents,
   INCIDENTS_UPDATED_EVENT,
@@ -144,6 +145,17 @@ export default function AnalyticsDashboard({ readOnly = false }) {
     URL.revokeObjectURL(url);
   }
 
+  function exportPdfReport() {
+    try {
+      const doc = buildIncidentPdf(filteredIncidents, 'Hazora Safety Report');
+      doc.save('hazora-incident-report.pdf');
+      setShowExportMenu(false);
+    } catch (error) {
+      console.error('Failed to generate PDF report:', error);
+      window.alert('PDF export is unavailable. Please install the required PDF library or use CSV export instead.');
+    }
+  }
+
   return (
     <div className="analytics-dashboard">
       {/* Header with Export */}
@@ -161,8 +173,8 @@ export default function AnalyticsDashboard({ readOnly = false }) {
           </button>
           {showExportMenu && (
             <div className="export-menu">
-              <button className="export-menu-item" onClick={() => setShowExportMenu(false)}>
-                PDF coming soon
+              <button className="export-menu-item" onClick={exportPdfReport}>
+                Export as PDF
               </button>
               <button className="export-menu-item" onClick={() => {
                 downloadReport('hazora-incident-report.csv', buildIncidentCsv(filteredIncidents));

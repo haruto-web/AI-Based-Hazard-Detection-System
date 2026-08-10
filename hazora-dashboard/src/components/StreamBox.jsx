@@ -63,6 +63,33 @@ export default function StreamBox({ id, label, cameraIP, onIPChange, isMain = fa
     return value.startsWith('http://') || value.startsWith('https://');
   }
 
+  function getIPFromUrl(value) {
+    try {
+      const url = new URL(value);
+      return validateIPv4(url.hostname) ? url.hostname : '';
+    } catch {
+      return '';
+    }
+  }
+
+  function getStreamUrl(value) {
+    if (!value) return '';
+
+    if (!isUrl(value)) {
+      return `http://${value}:81/stream`;
+    }
+
+    try {
+      const url = new URL(value);
+      if (url.pathname === '/' || url.pathname === '') {
+        return `${url.protocol}//${url.hostname}:81/stream`;
+      }
+      return value;
+    } catch {
+      return value;
+    }
+  }
+
   function handleConnect(e) {
     e.preventDefault();
     setError(null);
@@ -75,9 +102,9 @@ export default function StreamBox({ id, label, cameraIP, onIPChange, isMain = fa
       return;
     }
 
-    // Accept full URLs or IP addresses
     if (isUrl(trimmed)) {
-      onIPChange(id, trimmed);
+      const ipFromUrl = getIPFromUrl(trimmed);
+      onIPChange(id, ipFromUrl || trimmed);
     } else if (validateIPv4(trimmed)) {
       onIPChange(id, trimmed);
     } else {
@@ -92,12 +119,7 @@ export default function StreamBox({ id, label, cameraIP, onIPChange, isMain = fa
     setStatus('idle');
   }
 
-  // Build stream URL: if cameraIP is already a URL, use it directly; otherwise build from IP
-  const streamUrl = cameraIP
-    ? (cameraIP.startsWith('http://') || cameraIP.startsWith('https://'))
-      ? cameraIP
-      : `http://${cameraIP}:81/stream`
-    : '';
+  const streamUrl = getStreamUrl(cameraIP);
 
   return (
     <div className={`stream-box ${status}${isMain ? ' main' : ''}`}>
