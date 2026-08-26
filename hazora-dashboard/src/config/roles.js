@@ -20,6 +20,7 @@ export const ROLE_ACCESS = {
     streams: 'full',
     reports: 'view',
     accounts: 'none',
+    messages: 'none',
     about: 'full',
     profile: 'full',
   },
@@ -28,6 +29,7 @@ export const ROLE_ACCESS = {
     streams: 'full',
     reports: 'view',
     accounts: 'none',
+    messages: 'none',
     about: 'full',
     profile: 'full',
   },
@@ -36,6 +38,7 @@ export const ROLE_ACCESS = {
     streams: 'view',
     reports: 'none',
     accounts: 'none',
+    messages: 'none',
     about: 'full',
     profile: 'full',
   },
@@ -44,6 +47,7 @@ export const ROLE_ACCESS = {
     streams: 'full',
     reports: 'view',
     accounts: 'none',
+    messages: 'none',
     about: 'full',
     profile: 'full',
   },
@@ -52,6 +56,7 @@ export const ROLE_ACCESS = {
     streams: 'full',
     reports: 'full',
     accounts: 'none',
+    messages: 'full',
     about: 'full',
     profile: 'full',
   },
@@ -60,6 +65,7 @@ export const ROLE_ACCESS = {
     streams: 'full',
     reports: 'full',
     accounts: 'none',
+    messages: 'full',
     about: 'full',
     profile: 'full',
   },
@@ -68,6 +74,7 @@ export const ROLE_ACCESS = {
     streams: 'full',
     reports: 'full',
     accounts: 'full',
+    messages: 'full',
     about: 'full',
     profile: 'full',
   },
@@ -95,12 +102,26 @@ export function canManageMobileAccounts(role) {
   return role === 'HSE Head - Head Office';
 }
 
+/**
+ * Check if a role can send messages from website to mobile app
+ * @param {string} role
+ * @returns {boolean}
+ */
+export function canSendMobileMessages(role) {
+  return [
+    'Safety Engineer - Head Office',
+    'Safety Manager - Head Office',
+    'HSE Head - Head Office',
+  ].includes(role);
+}
+
 // Default access for unknown roles (full access as fallback)
 const DEFAULT_ACCESS = {
   dashboard: 'full',
   streams: 'full',
   reports: 'full',
   accounts: 'none',
+  messages: 'none',
   about: 'full',
   profile: 'full',
 };

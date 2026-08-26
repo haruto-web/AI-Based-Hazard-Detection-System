@@ -87,7 +87,12 @@ export default function TopNavBar({ userEmail, onLogout, onNavigateProfile, onNa
   }
 
   function formatTime(timestamp) {
+    if (!timestamp) return '';
+    if (typeof timestamp?.toDate === 'function') {
+      return timestamp.toDate().toLocaleString();
+    }
     const date = new Date(timestamp);
+    if (Number.isNaN(date.getTime())) return '';
     return date.toLocaleString();
   }
 
@@ -193,7 +198,7 @@ export default function TopNavBar({ userEmail, onLogout, onNavigateProfile, onNa
                     >
                       <div className="notif-item-content">
                         <span className="notif-type">{notif.violationType || 'Alert'}</span>
-                        <span className="notif-source">{notif.cameraSource || ''}</span>
+                        <span className="notif-source">{notif.cameraSource || notif.message || notif.body || notif.preview || ''}</span>
                       </div>
                       <span className="notif-time">{formatTime(notif.timestamp)}</span>
                     </button>

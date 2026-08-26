@@ -2,53 +2,94 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // --- HELPER FUNCTIONS ---
     function isSignedIn() {
       return request.auth != null;
     }
 
-    function isHSEHead() {
-      return isSignedIn()
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'HSE Head - Head Office';
+    function isHeadOffice() {
+      return isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in [
+          'Safety Engineer - Head Office',
+          'Safety Manager - Head Office',
+          'HSE Head - Head Office'
+        ];
     }
 
+    function isHSEHead() {
+      return isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'HSE Head - Head Office';
+    }
+
+    // --- MOBILE APP ACCESS (NO FIREBASE AUTH REQUIRED) ---
+
+    match /mobile_accounts/{accountId} {
+      // Allow the app to verify credentials and check active status.
+      allow read: if true;
+      // Allow the app user to update their password after login.
+      allow update: if true;
+      // Restrict account management to HSE Head via website.
+      allow create, delete: if isHSEHead();
+    }
+
+    match /messages/{messageId} {
+      // Website signed-in users can send messages to the mobile app.
+      allow create: if isSignedIn();
+      // Website and mobile app can read messages; mobile app can mark them as read.
+      allow read, update: if true;
+      allow delete: if isHeadOffice();
+    }
+
+    match /incidents/{incidentId} {
+      // Allow mobile app to see incidents and dashboard to count stats.
+      allow read: if true;
+      allow create, update: if true;
+      allow delete: if isHeadOffice();
+    }
+
+    match /detections/{detectionId} {
+      // Allow mobile app to show recent detections.
+      allow read: if true;
+      allow create, update, delete: if true;
+    }
+
+    match /audit_logs/{logId} {
+      // Allow app to log actions.
+      allow create: if true;
+      allow read: if true;
+      allow update, delete: if false;
+    }
+
+    // --- WEBSITE / AUTHENTICATED ACCESS ---
+
     match /users/{userId} {
-      allow read, write: if isSignedIn() && request.auth.uid == userId;
+      allow create: if isSignedIn() && request.auth.uid == userId;
+      allow read, update: if isSignedIn() && request.auth.uid == userId;
+      allow delete: if isHeadOffice();
 
       match /notifications/{notifId} {
         allow read, write: if isSignedIn() && request.auth.uid == userId;
       }
 
       match /incidents/{incidentId} {
-        allow read, write: if isSignedIn() && request.auth.uid == userId;
+        allow read, create, update, delete: if isSignedIn() && request.auth.uid == userId;
       }
     }
 
     match /sites/{siteId} {
-      allow read, write: if isSignedIn();
-    }
-
-    match /detections/{detectionId} {
-      allow read, write: if isSignedIn();
-    }
-
-    match /incidents/{incidentId} {
-      allow read, write: if isSignedIn();
+      allow read: if true;
+      allow create, update, delete: if isHeadOffice();
     }
 
     match /reports/{reportId} {
-      allow read, write: if isSignedIn();
-    }
-
-    match /mobile_accounts/{accountId} {
-      allow read, create, update, delete: if isHSEHead();
-    }
-
-    match /audit_logs/{logId} {
-      allow read, write: if isSignedIn();
+      allow read: if true;
+      allow create: if true;
+      allow update, delete: if isHeadOffice();
     }
 
     match /camera_configs/{configId} {
-      allow read, write: if isSignedIn();
+      allow read: if true;
+      allow create, update, delete: if true;
     }
 
     match /{document=**} {
