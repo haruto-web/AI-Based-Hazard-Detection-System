@@ -14,6 +14,7 @@ import Sidebar from '../components/Sidebar';
 import TopNavBar from '../components/TopNavBar';
 import AnalyticsDashboard from '../components/AnalyticsDashboard';
 import ReportsPage from '../components/ReportsPage';
+import MobileAccountsPage from '../components/MobileAccountsPage';
 import ProfilePage from '../components/ProfilePage';
 import AboutPage from '../components/AboutPage';
 import Footer from '../components/Footer';
@@ -154,6 +155,10 @@ export default function Dashboard() {
 
             {activeView === 'reports' && canAccess(userRole, 'reports') && (
               <ReportsPage readOnly={!hasFullAccess(userRole, 'reports')} />
+            )}
+
+            {activeView === 'accounts' && canAccess(userRole, 'accounts') && (
+              <MobileAccountsPage userRole={userRole} />
             )}
 
             {activeView === 'about' && <AboutPage />}

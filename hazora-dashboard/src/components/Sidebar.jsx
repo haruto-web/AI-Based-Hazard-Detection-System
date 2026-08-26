@@ -5,11 +5,12 @@ const NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: 'grid' },
   { id: 'streams', label: 'Live Streams', icon: 'camera' },
   { id: 'reports', label: 'Reports', icon: 'file' },
+  { id: 'accounts', label: 'Mobile Accounts', icon: 'users' },
   { id: 'about', label: 'About', icon: 'info' },
   { id: 'profile', label: 'Profile', icon: 'user' },
 ];
 
-const VALID_VIEWS = ['dashboard', 'streams', 'reports', 'about', 'profile'];
+const VALID_VIEWS = ['dashboard', 'streams', 'reports', 'accounts', 'about', 'profile'];
 
 function NavIcon({ type }) {
   switch (type) {
@@ -44,6 +45,15 @@ function NavIcon({ type }) {
         <svg viewBox="0 0 24 24">
           <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
           <circle cx="12" cy="7" r="4" />
+        </svg>
+      );
+    case 'users':
+      return (
+        <svg viewBox="0 0 24 24">
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+          <circle cx="9" cy="7" r="4" />
+          <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+          <path d="M16 3.13a4 4 0 0 1 0 7.75" />
         </svg>
       );
     case 'info':

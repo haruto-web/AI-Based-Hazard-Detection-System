@@ -19,6 +19,7 @@ export const ROLE_ACCESS = {
     dashboard: 'view',
     streams: 'full',
     reports: 'view',
+    accounts: 'none',
     about: 'full',
     profile: 'full',
   },
@@ -26,6 +27,7 @@ export const ROLE_ACCESS = {
     dashboard: 'view',
     streams: 'full',
     reports: 'view',
+    accounts: 'none',
     about: 'full',
     profile: 'full',
   },
@@ -33,6 +35,7 @@ export const ROLE_ACCESS = {
     dashboard: 'view',
     streams: 'view',
     reports: 'none',
+    accounts: 'none',
     about: 'full',
     profile: 'full',
   },
@@ -40,6 +43,7 @@ export const ROLE_ACCESS = {
     dashboard: 'full',
     streams: 'full',
     reports: 'view',
+    accounts: 'none',
     about: 'full',
     profile: 'full',
   },
@@ -47,6 +51,7 @@ export const ROLE_ACCESS = {
     dashboard: 'full',
     streams: 'full',
     reports: 'full',
+    accounts: 'none',
     about: 'full',
     profile: 'full',
   },
@@ -54,6 +59,7 @@ export const ROLE_ACCESS = {
     dashboard: 'full',
     streams: 'full',
     reports: 'full',
+    accounts: 'none',
     about: 'full',
     profile: 'full',
   },
@@ -61,6 +67,7 @@ export const ROLE_ACCESS = {
     dashboard: 'full',
     streams: 'full',
     reports: 'full',
+    accounts: 'full',
     about: 'full',
     profile: 'full',
   },
@@ -79,11 +86,21 @@ export function canManageSites(role) {
   ].includes(role);
 }
 
+/**
+ * Check if a role can provision mobile device accounts
+ * @param {string} role
+ * @returns {boolean}
+ */
+export function canManageMobileAccounts(role) {
+  return role === 'HSE Head - Head Office';
+}
+
 // Default access for unknown roles (full access as fallback)
 const DEFAULT_ACCESS = {
   dashboard: 'full',
   streams: 'full',
   reports: 'full',
+  accounts: 'none',
   about: 'full',
   profile: 'full',
 };
