@@ -11,7 +11,7 @@ const TOUR_STEPS = [
   {
     target: '.sidebar-nav-btn.active',
     title: 'Analytics Dashboard',
-    content: 'The Dashboard shows your safety overview at a glance: total detected workers, hard hat compliance rate, violation counts, gas/smoke alerts, most common hazards, safety performance charts, and a full incident log with timestamps.',
+    content: 'The Dashboard shows your safety overview at a glance: workers observed, hard hat compliance, open and high-risk incidents, hazard trends, risk distribution, and a full incident log with descriptions and confidence.',
     position: 'right',
   },
   {

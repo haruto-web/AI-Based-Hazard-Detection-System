@@ -133,6 +133,7 @@
   object-fit: contain;
   display: block;
   background: #000000;
+  filter: brightness(0.88) contrast(1.03);
 }
 
 .stream-box-img-hidden {

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import {
   buildIncidentCsv,
+  filterIncidentsByMonthYear,
   filterIncidentsByPeriod,
   getIncidents,
   INCIDENTS_UPDATED_EVENT,
@@ -17,6 +18,7 @@ export default function ReportsPage({ readOnly = false }) {
   const [currentPage, setCurrentPage] = useState(1);
   const [showGenerateDialog, setShowGenerateDialog] = useState(false);
   const [generateRange, setGenerateRange] = useState('Last 7 Days');
+  const [selectedMonth, setSelectedMonth] = useState('');
 
   useEffect(() => {
     const unsubscribe = subscribeToIncidents(user?.uid, setIncidents);
@@ -34,8 +36,12 @@ export default function ReportsPage({ readOnly = false }) {
     };
   }, [user?.uid]);
 
+  const filteredIncidents = useMemo(() => {
+    return filterIncidentsByMonthYear(incidents, selectedMonth);
+  }, [incidents, selectedMonth]);
+
   const reports = useMemo(() => {
-    const grouped = incidents.reduce((groups, incident) => {
+    const grouped = filteredIncidents.reduce((groups, incident) => {
       const key = incident.date;
       if (!groups[key]) groups[key] = [];
       groups[key].push(incident);
@@ -46,10 +52,12 @@ export default function ReportsPage({ readOnly = false }) {
       date,
       timePeriod: 'Daily Incident Report',
       totalIncidents: group.length,
+      highRisk: group.filter((incident) => ['high', 'critical'].includes(incident.severity)).length,
+      hazards: [...new Set(group.map((incident) => incident.hazardType))].join(', '),
       incidents: group,
       downloadUrl: URL.createObjectURL(new Blob([buildIncidentCsv(group)], { type: 'text/csv;charset=utf-8' })),
     }));
-  }, [incidents]);
+  }, [filteredIncidents]);
 
   const totalPages = Math.ceil(reports.length / PAGE_SIZE) || 1;
   const paginatedReports = reports.slice(
@@ -58,7 +66,9 @@ export default function ReportsPage({ readOnly = false }) {
   );
 
   function handleGenerate() {
-    const generatedIncidents = filterIncidentsByPeriod(incidents, generateRange);
+    const generatedIncidents = selectedMonth
+      ? filteredIncidents
+      : filterIncidentsByPeriod(incidents, generateRange);
     const blob = new Blob([buildIncidentCsv(generatedIncidents)], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -84,6 +94,23 @@ export default function ReportsPage({ readOnly = false }) {
             </button>
           )}
         </div>
+        <div className="report-date-filter">
+          <label htmlFor="report-month">Report month</label>
+          <input
+            id="report-month"
+            type="month"
+            value={selectedMonth}
+            onChange={(event) => {
+              setSelectedMonth(event.target.value);
+              setCurrentPage(1);
+            }}
+          />
+          {selectedMonth && (
+            <button className="clear-date-btn" onClick={() => setSelectedMonth('')}>
+              Clear month
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Reports Table */}
@@ -94,13 +121,15 @@ export default function ReportsPage({ readOnly = false }) {
               <th>Report Date</th>
               <th>Time Period</th>
               <th>Total Incidents</th>
+              <th>High Risk</th>
+              <th>Hazards Detected</th>
               <th>Download</th>
             </tr>
           </thead>
           <tbody>
             {paginatedReports.length === 0 ? (
               <tr>
-                <td colSpan={4} className="reports-empty">
+                <td colSpan={6} className="reports-empty">
                   No reports available for this site
                 </td>
               </tr>
@@ -110,6 +139,8 @@ export default function ReportsPage({ readOnly = false }) {
                   <td>{report.date}</td>
                   <td>{report.timePeriod}</td>
                   <td>{report.totalIncidents}</td>
+                  <td><span className="report-risk-count">{report.highRisk}</span></td>
+                  <td>{report.hazards}</td>
                   <td>
                     <a href={report.downloadUrl || '#'} className="download-link" download={`hazora-${report.date.replace(/\//g, '-')}-report.csv`}>
                       Download
@@ -147,7 +178,7 @@ export default function ReportsPage({ readOnly = false }) {
 
       {/* Note */}
       <p className="reports-note">
-        Full report generation coming soon. Backend integration is not yet connected.
+        Reports include detection time, hazard description, severity, status, confidence, camera source, and model metadata.
       </p>
 
       {/* Generate Report Dialog */}
@@ -170,6 +201,8 @@ export default function ReportsPage({ readOnly = false }) {
                 <option value="Last 90 Days">Last 90 Days</option>
               </select>
             </div>
+
+            {selectedMonth && <p className="date-filter-note">The selected month overrides the relative time range.</p>}
 
             <div className="dialog-actions">
               <button className="dialog-cancel-btn" onClick={() => setShowGenerateDialog(false)}>

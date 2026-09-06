@@ -5,8 +5,8 @@ import * as blazeface from '@tensorflow-models/blazeface';
 export const HELMET_MODEL_URL = '/models/helmet/model.json';
 export const HELMET_METADATA_URL = '/models/helmet/metadata.json';
 
-const HELMET_COLOR_THRESHOLD = 0.08;
-const HELMET_CONFIDENCE_THRESHOLD = 0.8;
+const HELMET_COLOR_THRESHOLD = 0.14;
+const HELMET_CONFIDENCE_THRESHOLD = 0.65;
 
 export function buildCaptureUrl(value) {
   if (!value) return '';
@@ -20,6 +20,34 @@ export function buildCaptureUrl(value) {
   } catch {
     return '';
   }
+}
+
+export function getAutoBrightnessScale(ctx, width, height) {
+  const imageData = ctx.getImageData(0, 0, width, height);
+  const data = imageData.data;
+  let luminanceTotal = 0;
+  let sampledPixels = 0;
+  let brightPixels = 0;
+
+  for (let index = 0; index < data.length; index += 64) {
+    const red = data[index];
+    const green = data[index + 1];
+    const blue = data[index + 2];
+    const luminance = (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255;
+    luminanceTotal += luminance;
+    sampledPixels++;
+    if (luminance >= 0.94) brightPixels++;
+  }
+
+  if (!sampledPixels) return 1;
+
+  const averageLuminance = luminanceTotal / sampledPixels;
+  const brightPixelRatio = brightPixels / sampledPixels;
+  if (averageLuminance <= 0.72 && brightPixelRatio <= 0.28) return 1;
+
+  const averageScale = 0.72 / Math.max(averageLuminance, 0.72);
+  const highlightScale = brightPixelRatio > 0.45 ? 0.72 : 0.84;
+  return Math.max(0.55, Math.min(1, averageScale, highlightScale));
 }
 
 export async function loadPpeDetectionModels() {
@@ -121,7 +149,11 @@ export function resolveHelmetDecision({
 
   const fallbackHelmet =
     colorFallback &&
-    (lowerColorScore >= 0.18 || colorScore >= HELMET_COLOR_THRESHOLD) &&
+    (lowerColorScore >= 0.2 || (
+      colorScore >= HELMET_COLOR_THRESHOLD &&
+      helmetScoreValue >= HELMET_CONFIDENCE_THRESHOLD &&
+      helmetScoreValue > noHelmetScoreValue
+    )) &&
     darkScore < 0.18;
 
   const hasHelmet = strongHelmetEvidence || fallbackHelmet;
@@ -154,9 +186,9 @@ export function getHelmetRegionFromFace(face) {
 
   return {
     x: x1 - faceWidth * 0.08,
-    y: y1 - faceHeight * 0.92,
+    y: y1 - faceHeight * 0.58,
     width: faceWidth * 1.16,
-    height: faceHeight * 0.92,
+    height: faceHeight * 0.58,
   };
 }
 
@@ -183,12 +215,12 @@ function hasHelmetByColor(ctx, canvas, region) {
 
   const stats = getHelmetRegionStats(imageData);
 
-  if (stats.darkScore > 0.24 && stats.lowerColorScore < 0.16) {
+  if (stats.darkScore > 0.24 && stats.lowerColorScore < 0.2) {
     return false;
   }
 
   return (
-    stats.lowerColorScore >= 0.12 ||
+    stats.lowerColorScore >= 0.2 ||
     (stats.colorScore >= HELMET_COLOR_THRESHOLD && stats.darkScore < 0.18)
   );
 }
@@ -218,7 +250,7 @@ export async function classifyHelmetRegion({
   );
   const regionStats = getHelmetRegionStats(imageData);
 
-  if (regionStats.darkScore > 0.22 && regionStats.lowerColorScore < 0.14) {
+  if (regionStats.darkScore > 0.22 && regionStats.lowerColorScore < 0.2) {
     return { hasHelmet: false, confidence: 1 };
   }
 

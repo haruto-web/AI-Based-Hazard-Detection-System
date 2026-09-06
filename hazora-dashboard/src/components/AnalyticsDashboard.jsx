@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import {
   buildIncidentCsv,
   buildIncidentPdf,
+  filterIncidentsByMonthYear,
   filterIncidentsByPeriod,
   getIncidents,
   INCIDENTS_UPDATED_EVENT,
@@ -58,13 +59,14 @@ function StatIcon({ type }) {
   }
 }
 
-const INCIDENT_COLUMNS = ['Date', 'Time', 'Hazard Type', 'Camera Source', 'Severity Level'];
+const INCIDENT_COLUMNS = ['Date', 'Time', 'Hazard Type', 'Description', 'Camera Source', 'Severity', 'Status', 'Confidence'];
 
 const PAGE_SIZE = 20;
 
 export default function AnalyticsDashboard({ readOnly = false }) {
   const { user } = useAuth();
   const [timePeriod, setTimePeriod] = useState('Last 24 Hours');
+  const [selectedMonth, setSelectedMonth] = useState('');
   const [incidents, setIncidents] = useState(() => getIncidents());
   const [currentPage, setCurrentPage] = useState(1);
   const [showExportMenu, setShowExportMenu] = useState(false);
@@ -86,17 +88,16 @@ export default function AnalyticsDashboard({ readOnly = false }) {
   }, [user?.uid]);
 
   const filteredIncidents = useMemo(() => {
-    return filterIncidentsByPeriod(incidents, timePeriod);
-  }, [incidents, timePeriod]);
+    return selectedMonth
+      ? filterIncidentsByMonthYear(incidents, selectedMonth)
+      : filterIncidentsByPeriod(incidents, timePeriod);
+  }, [incidents, selectedMonth, timePeriod]);
 
   const statsCards = useMemo(() => {
     const totalDetectedWorkers = filteredIncidents.reduce(
       (sum, incident) => sum + (incident.detectedWorkers || 0),
       0
     );
-    const noHardHatViolations = filteredIncidents.filter(
-      (incident) => incident.hazardType === 'No Safety Helmet'
-    ).length;
     const helmetCount = filteredIncidents.reduce(
       (sum, incident) => sum + (incident.helmets || 0),
       0
@@ -113,14 +114,37 @@ export default function AnalyticsDashboard({ readOnly = false }) {
       return counts;
     }, {});
     const mostCommonHazard = Object.entries(hazardCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/A';
+    const openIncidents = filteredIncidents.filter((incident) => incident.status === 'open').length;
+    const criticalIncidents = filteredIncidents.filter((incident) => ['high', 'critical'].includes(incident.severity)).length;
 
     return [
-      { id: 'workers', label: 'Total Detected Workers', value: totalDetectedWorkers, format: 'number' },
+      { id: 'workers', label: 'Workers Observed', value: totalDetectedWorkers, format: 'number' },
       { id: 'compliance', label: 'Hard Hat Compliance Rate', value: complianceRate, format: 'percent' },
-      { id: 'violations', label: 'No Hard Hat Violations', value: noHardHatViolations, format: 'number' },
-      { id: 'gas', label: 'Gas/Smoke Alerts', value: 0, format: 'number' },
+      { id: 'violations', label: 'Open Incidents', value: openIncidents, format: 'number' },
+      { id: 'gas', label: 'High Risk Incidents', value: criticalIncidents, format: 'number' },
       { id: 'common', label: 'Most Common Hazard', value: mostCommonHazard, format: 'text' },
     ];
+  }, [filteredIncidents]);
+
+  const insightData = useMemo(() => {
+    const severityCounts = filteredIncidents.reduce((counts, incident) => {
+      counts[incident.severity] = (counts[incident.severity] || 0) + 1;
+      return counts;
+    }, {});
+    const hazardCounts = filteredIncidents.reduce((counts, incident) => {
+      counts[incident.hazardType] = (counts[incident.hazardType] || 0) + 1;
+      return counts;
+    }, {});
+    const dailyCounts = filteredIncidents.reduce((counts, incident) => {
+      counts[incident.date] = (counts[incident.date] || 0) + 1;
+      return counts;
+    }, {});
+
+    return {
+      severityCounts,
+      hazardCounts: Object.entries(hazardCounts).sort((a, b) => b[1] - a[1]).slice(0, 5),
+      dailyCounts: Object.entries(dailyCounts).slice(-7),
+    };
   }, [filteredIncidents]);
 
   const totalPages = Math.ceil(filteredIncidents.length / PAGE_SIZE) || 1;
@@ -148,7 +172,7 @@ export default function AnalyticsDashboard({ readOnly = false }) {
   function exportPdfReport() {
     try {
       const doc = buildIncidentPdf(filteredIncidents, 'Hazora Safety Report');
-      doc.save('hazora-incident-report.pdf');
+      doc.save(`hazora-incident-report${selectedMonth ? `-${selectedMonth}` : ''}.pdf`);
       setShowExportMenu(false);
     } catch (error) {
       console.error('Failed to generate PDF report:', error);
@@ -177,7 +201,7 @@ export default function AnalyticsDashboard({ readOnly = false }) {
                 Export as PDF
               </button>
               <button className="export-menu-item" onClick={() => {
-                downloadReport('hazora-incident-report.csv', buildIncidentCsv(filteredIncidents));
+                downloadReport(`hazora-incident-report${selectedMonth ? `-${selectedMonth}` : ''}.csv`, buildIncidentCsv(filteredIncidents));
                 setShowExportMenu(false);
               }}>
                 Export as CSV
@@ -202,6 +226,22 @@ export default function AnalyticsDashboard({ readOnly = false }) {
             {period}
           </button>
         ))}
+        <label className="month-filter-label" htmlFor="analytics-month">Or select month</label>
+        <input
+          id="analytics-month"
+          className="month-filter-input"
+          type="month"
+          value={selectedMonth}
+          onChange={(event) => {
+            setSelectedMonth(event.target.value);
+            setCurrentPage(1);
+          }}
+        />
+        {selectedMonth && (
+          <button className="clear-month-btn" onClick={() => setSelectedMonth('')}>
+            Clear month
+          </button>
+        )}
       </div>
 
       {/* Statistics Cards */}
@@ -219,21 +259,40 @@ export default function AnalyticsDashboard({ readOnly = false }) {
         ))}
       </div>
 
-      {/* Safety Performance Chart Placeholder */}
-      <section className="chart-section">
-        <h3 className="section-title">Safety Performance</h3>
-        <div className="chart-placeholder">
-          <div className="chart-axes">
-            <div className="chart-y-axis">
-              <span>Incidents</span>
+      <div className="insight-grid">
+        <section className="chart-section">
+          <h3 className="section-title">Incident trend</h3>
+          {insightData.dailyCounts.length === 0 ? <p className="chart-empty-message">No incidents in this period</p> : (
+            <div className="trend-chart" aria-label="Incident trend by day">
+              {insightData.dailyCounts.map(([date, count]) => (
+                <div className="trend-column" key={date}>
+                  <span className="trend-value">{count}</span>
+                  <div className="trend-bar" style={{ height: `${Math.max(12, count * 22)}px` }} />
+                  <span className="trend-label">{date}</span>
+                </div>
+              ))}
             </div>
-            <div className="chart-area">
-              <p className="chart-empty-message">No data available</p>
-            </div>
-            <div className="chart-x-axis">
-              <span>Time Period</span>
-            </div>
+          )}
+        </section>
+        <section className="chart-section">
+          <h3 className="section-title">Risk distribution</h3>
+          <div className="distribution-list">
+            {['critical', 'high', 'medium', 'low'].map((severity) => (
+              <div className="distribution-row" key={severity}>
+                <span className={`severity-badge ${severity}`}>{severity}</span>
+                <div className="distribution-track"><span style={{ width: `${filteredIncidents.length ? ((insightData.severityCounts[severity] || 0) / filteredIncidents.length) * 100 : 0}%` }} /></div>
+                <strong>{insightData.severityCounts[severity] || 0}</strong>
+              </div>
+            ))}
           </div>
+        </section>
+      </div>
+      <section className="chart-section">
+        <h3 className="section-title">Top hazards</h3>
+        <div className="hazard-list">
+          {insightData.hazardCounts.length === 0 ? <p className="chart-empty-message">No hazards recorded for this period</p> : insightData.hazardCounts.map(([hazard, count]) => (
+            <div className="hazard-row" key={hazard}><span>{hazard}</span><strong>{count}</strong></div>
+          ))}
         </div>
       </section>
 
@@ -262,12 +321,15 @@ export default function AnalyticsDashboard({ readOnly = false }) {
                     <td>{incident.date}</td>
                     <td>{incident.time}</td>
                     <td>{incident.hazardType}</td>
+                    <td className="incident-description">{incident.description}</td>
                     <td>{incident.cameraSource}</td>
                     <td>
                       <span className={`severity-badge ${incident.severity}`}>
                         {incident.severity}
                       </span>
                     </td>
+                    <td>{incident.status}</td>
+                    <td>{incident.detectionConfidence ? `${Math.round(incident.detectionConfidence * 100)}%` : 'N/A'}</td>
                   </tr>
                 ))
               )}

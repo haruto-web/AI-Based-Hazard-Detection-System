@@ -10,6 +10,7 @@ import {
   drawHelmetResult,
   drawPersonResult,
   findFaceForPerson,
+  getAutoBrightnessScale,
   getHelmetRegionFromFace,
   getHelmetRegionFromPerson,
   loadPpeDetectionModels,
@@ -22,10 +23,12 @@ export function useDetection(cameraIP, isConnected) {
   const canvasRef = useRef(null);
   const cropCanvasRef = useRef(null);
   const timerRef = useRef(null);
+  const detectFrameRef = useRef(null);
   const lastHelmetAlertRef = useRef(0);
   const noHelmetFrameCountRef = useRef(0);
   const { addNotification } = useNotifications();
   const { user } = useAuth();
+  const userId = user?.uid;
   const [cocoModel, setCocoModel] = useState(null);
   const [faceModel, setFaceModel] = useState(null);
   const [helmetModel, setHelmetModel] = useState(null);
@@ -92,6 +95,14 @@ export function useDetection(cameraIP, isConnected) {
       canvas.height = imageBitmap.height;
       ctx.drawImage(imageBitmap, 0, 0);
 
+      const brightnessScale = getAutoBrightnessScale(ctx, canvas.width, canvas.height);
+      if (brightnessScale < 1) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.filter = `brightness(${brightnessScale}) contrast(1.03)`;
+        ctx.drawImage(imageBitmap, 0, 0);
+        ctx.filter = 'none';
+      }
+
       const [cocoPredictions, facePredictions] = await Promise.all([
         cocoModel.detect(canvas),
         faceModel.estimateFaces(canvas, false),
@@ -100,6 +111,7 @@ export function useDetection(cameraIP, isConnected) {
       const persons = cocoPredictions.filter((p) => p.class === 'person');
       let helmetCount = 0;
       let noHelmetCount = 0;
+      let confidenceTotal = 0;
 
       for (const prediction of persons) {
         drawPersonResult(ctx, prediction);
@@ -119,7 +131,8 @@ export function useDetection(cameraIP, isConnected) {
           helmetMetadata,
           cropCanvas,
         });
-        const hasHelmet = helmetResult.hasHelmet;
+        const { hasHelmet, confidence } = helmetResult;
+        confidenceTotal += confidence || 0;
 
         if (hasHelmet) {
           helmetCount++;
@@ -155,10 +168,14 @@ export function useDetection(cameraIP, isConnected) {
             severity: 'high',
           });
           createIncidentReport({
-            userId: user?.uid,
+            userId,
             hazardType: 'No Safety Helmet',
+            hazardCode: 'ppe_no_helmet',
+            description: `${noHelmetCount} worker${noHelmetCount === 1 ? '' : 's'} detected without required head protection.`,
             cameraSource: cameraIP,
-            severity: 'high',
+            severity: noHelmetCount > 1 ? 'high' : 'medium',
+            detectionConfidence: persons.length ? confidenceTotal / persons.length : 0,
+            model: 'helmet-ppe',
             detectedWorkers: persons.length,
             helmets: helmetCount,
             noHelmets: noHelmetCount,
@@ -174,7 +191,7 @@ export function useDetection(cameraIP, isConnected) {
     }
 
     if (detecting) {
-      timerRef.current = setTimeout(detectFrame, 500);
+      timerRef.current = setTimeout(() => detectFrameRef.current?.(), 500);
     }
   }, [
     cocoModel,
@@ -184,8 +201,12 @@ export function useDetection(cameraIP, isConnected) {
     cameraIP,
     detecting,
     addNotification,
-    user?.uid,
+    userId,
   ]);
+
+  useEffect(() => {
+    detectFrameRef.current = detectFrame;
+  }, [detectFrame]);
 
   useEffect(() => {
     if (detecting && cocoModel && faceModel && helmetModel && isConnected && cameraIP) {

@@ -236,7 +236,9 @@ bool initCamera() {
     s->set_framesize(s, selectedFrameSize);
     s->set_hmirror(s, 1);                  // Horizontal mirror
     s->set_vflip(s, 0);                    // No vertical flip
-    s->set_brightness(s, 1);               // Slight brightness boost
+    s->set_exposure_ctrl(s, 1);            // Let the sensor compensate for bright/dark scenes
+    s->set_gain_ctrl(s, 1);                // Keep analog gain automatic
+    s->set_brightness(s, 0);               // Do not add a permanent brightness boost
     s->set_saturation(s, 0);               // Normal saturation
   }
 
