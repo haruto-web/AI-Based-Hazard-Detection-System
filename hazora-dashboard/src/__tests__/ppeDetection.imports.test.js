@@ -45,8 +45,8 @@ describe('Helmet decision logic', () => {
   it('keeps the face helmet crop focused above the face', () => {
     const region = getHelmetRegionFromFace({ topLeft: [100, 100], bottomRight: [140, 160] });
 
-    expect(region.y).toBeCloseTo(65.2);
-    expect(region.height).toBeCloseTo(34.8);
+    expect(region.y).toBeCloseTo(56.8);
+    expect(region.height).toBeCloseTo(43.2);
   });
 
   it('dims overexposed frames but leaves normal frames unchanged', () => {

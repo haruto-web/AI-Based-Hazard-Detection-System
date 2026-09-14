@@ -6,15 +6,11 @@ import { canManageMobileAccounts } from '../config/roles';
 import { sanitizeInput } from '../utils/security';
 import '../styles/MobileAccountsPage.css';
 
-const MOBILE_ROLES = [
-  'Mobile Safety Observer',
-  'Mobile Site Inspector',
-  'Mobile Device User',
-];
+const MOBILE_ROLE = 'Site/Safety Engineer';
 
 const initialForm = {
   name: '',
-  role: MOBILE_ROLES[0],
+  role: MOBILE_ROLE,
   username: '',
   password: '',
 };
@@ -31,7 +27,6 @@ export default function MobileAccountsPage({ userRole }) {
 
   useEffect(() => {
     if (!allowed) {
-      setLoading(false);
       return undefined;
     }
 
@@ -82,6 +77,11 @@ export default function MobileAccountsPage({ userRole }) {
 
     if (form.password.length < 6) {
       setMessage({ type: 'error', text: 'Password must be at least 6 characters.' });
+      return;
+    }
+
+    if (cleanRole !== MOBILE_ROLE) {
+      setMessage({ type: 'error', text: 'Mobile account role must be Site/Safety Engineer.' });
       return;
     }
 
@@ -153,16 +153,13 @@ export default function MobileAccountsPage({ userRole }) {
 
             <div className="mobile-field">
               <label htmlFor="mobile-role">Role</label>
-              <select
+              <input
                 id="mobile-role"
+                type="text"
                 value={form.role}
-                onChange={(e) => handleChange('role', e.target.value)}
+                readOnly
                 disabled={saving}
-              >
-                {MOBILE_ROLES.map((role) => (
-                  <option key={role} value={role}>{role}</option>
-                ))}
-              </select>
+              />
             </div>
 
             <div className="mobile-field">

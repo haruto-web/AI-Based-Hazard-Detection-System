@@ -149,7 +149,9 @@ export function resolveHelmetDecision({
 
   const fallbackHelmet =
     colorFallback &&
-    (lowerColorScore >= 0.2 || (
+    ((lowerColorScore >= 0.2 &&
+      helmetScoreValue >= 0.55 &&
+      helmetScoreValue > noHelmetScoreValue) || (
       colorScore >= HELMET_COLOR_THRESHOLD &&
       helmetScoreValue >= HELMET_CONFIDENCE_THRESHOLD &&
       helmetScoreValue > noHelmetScoreValue
@@ -186,9 +188,9 @@ export function getHelmetRegionFromFace(face) {
 
   return {
     x: x1 - faceWidth * 0.08,
-    y: y1 - faceHeight * 0.58,
+    y: y1 - faceHeight * 0.72,
     width: faceWidth * 1.16,
-    height: faceHeight * 0.58,
+    height: faceHeight * 0.72,
   };
 }
 

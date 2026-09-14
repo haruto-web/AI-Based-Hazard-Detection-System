@@ -114,8 +114,6 @@ export function useDetection(cameraIP, isConnected) {
       let confidenceTotal = 0;
 
       for (const prediction of persons) {
-        drawPersonResult(ctx, prediction);
-
         const face = findFaceForPerson(prediction, facePredictions);
         const rawHelmetRegion = face
           ? getHelmetRegionFromFace(face)
@@ -141,6 +139,7 @@ export function useDetection(cameraIP, isConnected) {
         }
 
         drawHelmetResult(ctx, helmetRegion, hasHelmet);
+        drawPersonResult(ctx, prediction);
       }
 
       facePredictions.forEach((face) => {
