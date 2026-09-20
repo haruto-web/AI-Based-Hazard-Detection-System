@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import {
   buildIncidentCsv,
@@ -12,6 +12,22 @@ import {
 import '../styles/AnalyticsDashboard.css';
 
 const TIME_PERIODS = ['Last 24 Hours', 'Last 7 Days', 'Last 30 Days'];
+
+function getCalendarDays(month) {
+  const firstDay = new Date(month.getFullYear(), month.getMonth(), 1);
+  const start = new Date(firstDay);
+  start.setDate(1 - firstDay.getDay());
+
+  return Array.from({ length: 42 }, (_, index) => {
+    const day = new Date(start);
+    day.setDate(start.getDate() + index);
+    return day;
+  });
+}
+
+function formatMonth(month) {
+  return month.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+}
 
 function StatIcon({ type }) {
   switch (type) {
@@ -67,6 +83,9 @@ export default function AnalyticsDashboard({ readOnly = false }) {
   const { user } = useAuth();
   const [timePeriod, setTimePeriod] = useState('Last 24 Hours');
   const [selectedMonth, setSelectedMonth] = useState('');
+  const [showMonthPicker, setShowMonthPicker] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState(() => new Date());
+  const monthPickerRef = useRef(null);
   const [incidents, setIncidents] = useState(() => getIncidents());
   const [currentPage, setCurrentPage] = useState(1);
   const [showExportMenu, setShowExportMenu] = useState(false);
@@ -86,6 +105,17 @@ export default function AnalyticsDashboard({ readOnly = false }) {
       window.removeEventListener('storage', refreshIncidents);
     };
   }, [user?.uid]);
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (monthPickerRef.current && !monthPickerRef.current.contains(event.target)) {
+        setShowMonthPicker(false);
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const filteredIncidents = useMemo(() => {
     return selectedMonth
@@ -227,16 +257,61 @@ export default function AnalyticsDashboard({ readOnly = false }) {
           </button>
         ))}
         <label className="month-filter-label" htmlFor="analytics-month">Or select month</label>
-        <input
-          id="analytics-month"
-          className="month-filter-input"
-          type="month"
-          value={selectedMonth}
-          onChange={(event) => {
-            setSelectedMonth(event.target.value);
-            setCurrentPage(1);
-          }}
-        />
+        <div className="month-picker" ref={monthPickerRef}>
+          <button
+            id="analytics-month"
+            type="button"
+            className={`month-picker-trigger ${selectedMonth ? 'has-value' : ''}`}
+            onClick={() => setShowMonthPicker((visible) => !visible)}
+            aria-haspopup="dialog"
+            aria-expanded={showMonthPicker}
+          >
+            {selectedMonth
+              ? new Date(`${selectedMonth}-01T00:00:00`).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })
+              : 'Select month'}
+            <span aria-hidden="true">▣</span>
+          </button>
+          {showMonthPicker && (
+            <div className="month-picker-popover" role="dialog" aria-label="Choose month">
+              <div className="month-picker-header">
+                <strong>{formatMonth(calendarMonth)}</strong>
+                <div className="month-picker-actions">
+                  <button type="button" onClick={() => setCalendarMonth((month) => new Date(month.getFullYear(), month.getMonth() - 1, 1))} aria-label="Previous month">‹</button>
+                  <button type="button" onClick={() => setCalendarMonth((month) => new Date(month.getFullYear(), month.getMonth() + 1, 1))} aria-label="Next month">›</button>
+                </div>
+              </div>
+              <div className="month-picker-weekdays" aria-hidden="true">
+                {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((day) => <span key={day}>{day}</span>)}
+              </div>
+              <div className="month-picker-grid">
+                {getCalendarDays(calendarMonth).map((date) => {
+                  const monthValue = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+                  const isCurrentMonth = date.getMonth() === calendarMonth.getMonth();
+                  const isSelected = monthValue === selectedMonth;
+                  return (
+                    <button
+                      type="button"
+                      key={date.toISOString()}
+                      className={`month-picker-day ${isCurrentMonth ? '' : 'outside-month'} ${isSelected ? 'selected' : ''}`}
+                      onClick={() => {
+                        setSelectedMonth(monthValue);
+                        setCurrentPage(1);
+                        setShowMonthPicker(false);
+                      }}
+                      aria-label={date.toLocaleDateString()}
+                    >
+                      {date.getDate()}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="month-picker-footer">
+                <button type="button" onClick={() => { setSelectedMonth(''); setShowMonthPicker(false); }}>Clear</button>
+                <button type="button" onClick={() => { setCalendarMonth(new Date()); setSelectedMonth(`${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`); setCurrentPage(1); setShowMonthPicker(false); }}>This month</button>
+              </div>
+            </div>
+          )}
+        </div>
         {selectedMonth && (
           <button className="clear-month-btn" onClick={() => setSelectedMonth('')}>
             Clear month

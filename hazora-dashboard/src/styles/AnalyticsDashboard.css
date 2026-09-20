@@ -96,6 +96,24 @@
   border-color: var(--accent);
 }
 
+.month-picker { position: relative; }
+.month-picker-trigger { display: inline-flex; align-items: center; justify-content: space-between; gap: 1rem; min-width: 150px; min-height: 40px; padding: 0.5rem 0.75rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); color: var(--text-secondary); font-size: 0.85rem; cursor: pointer; }
+.month-picker-trigger:hover, .month-picker-trigger.has-value { border-color: var(--accent); color: var(--text-primary); }
+.month-picker-trigger:focus { outline: 2px solid var(--accent-bg); }
+.month-picker-popover { position: absolute; top: calc(100% + 0.45rem); right: 0; z-index: 20; width: 280px; padding: 0.8rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); box-shadow: 0 10px 28px var(--shadow); }
+.month-picker-header, .month-picker-footer { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.month-picker-header { margin-bottom: 0.7rem; color: var(--text-primary); font-size: 0.9rem; }
+.month-picker-actions { display: flex; gap: 0.35rem; }
+.month-picker-actions button { width: 28px; height: 28px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg-input); color: var(--text-primary); cursor: pointer; font-size: 1.1rem; line-height: 1; }
+.month-picker-weekdays, .month-picker-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 0.2rem; text-align: center; }
+.month-picker-weekdays { margin-bottom: 0.25rem; color: var(--text-muted); font-size: 0.68rem; font-weight: 700; }
+.month-picker-day { min-height: 30px; border: 1px solid transparent; border-radius: 50%; background: transparent; color: var(--text-primary); cursor: pointer; font-size: 0.78rem; }
+.month-picker-day:hover { border-color: var(--accent); color: var(--accent); }
+.month-picker-day.outside-month { color: var(--text-muted); }
+.month-picker-day.selected { background: var(--accent); color: #ffffff; font-weight: 700; }
+.month-picker-footer { margin-top: 0.7rem; padding-top: 0.65rem; border-top: 1px solid var(--border); }
+.month-picker-footer button { border: 0; background: transparent; color: var(--accent); cursor: pointer; font-size: 0.75rem; }
+
 .month-filter-label { align-self: center; color: var(--text-secondary); font-size: 0.8rem; font-weight: 600; }
 .month-filter-input { min-height: 38px; }
 .clear-month-btn { min-height: 38px; }

@@ -128,8 +128,10 @@ export function subscribeToIncidents(userId, onIncidents) {
   );
 }
 
-export function filterIncidentsByPeriod(incidents, period) {
-  const now = Date.now();
+export function filterIncidentsByPeriod(incidents, period, endDate = new Date()) {
+  const endTime = endDate instanceof Date
+    ? endDate.getTime()
+    : new Date(`${endDate}T23:59:59`).getTime();
   const ranges = {
     'Last 24 Hours': 24 * 60 * 60 * 1000,
     'Last 7 Days': 7 * 24 * 60 * 60 * 1000,
@@ -140,7 +142,7 @@ export function filterIncidentsByPeriod(incidents, period) {
 
   return incidents.map(normalizeIncident).filter((incident) => {
     const time = new Date(incident.timestamp).getTime();
-    return Number.isFinite(time) && now - time <= maxAge;
+    return Number.isFinite(time) && Number.isFinite(endTime) && endTime - time <= maxAge && time <= endTime;
   });
 }
 

@@ -2,6 +2,8 @@ import '../styles/DetectionViewer.css';
 
 export default function DetectionViewerContent({
   canvasRef,
+  streamImageRef,
+  streamUrl,
   loading,
   error,
   detections,
@@ -35,12 +37,14 @@ export default function DetectionViewerContent({
         <>
           <div className="detection-stats">
             <span className="stat person-stat">Persons: {detections.persons}</span>
-            <span className="stat face-stat">Faces: {detections.faces}</span>
-            <span className="stat helmet-stat">Helmet: {detections.helmets}</span>
-            <span className={`stat no-helmet-stat${detections.noHelmets > 0 ? ' active' : ''}`}>
-              No helmet: {detections.noHelmets}
+            <span className="stat helmet-stat">Helmets: {detections.helmets}</span>
+            <span className="stat vest-stat">Vests: {detections.vests}</span>
+            <span className="stat shoes-stat">Shoes: {detections.shoes}</span>
+            <span className={`stat violation-stat${detections.violations > 0 ? ' active' : ''}`}>
+              Violations: {detections.violations}
             </span>
           </div>
+          <img ref={streamImageRef} className="detection-stream-source" src={streamUrl} alt="" crossOrigin="anonymous" />
           <canvas ref={canvasRef} className="detection-canvas" />
         </>
       )}

@@ -3,52 +3,57 @@ import { createIncidentReport } from '../utils/incidents';
 import { useNotifications } from '../context/NotificationContext';
 import { useAuth } from '../context/AuthContext';
 import {
-  buildCaptureUrl,
-  classifyHelmetRegion,
-  clampRegion,
-  drawFaceResult,
-  drawHelmetResult,
-  drawPersonResult,
-  findFaceForPerson,
-  getAutoBrightnessScale,
-  getHelmetRegionFromFace,
-  getHelmetRegionFromPerson,
+  detectPpeObjects,
+  drawPpeResult,
+  groupPpeDetections,
   loadPpeDetectionModels,
 } from '../AI/LM_detection/ppeDetection';
 
 const VIOLATION_COOLDOWN_MS = 30000;
-const NO_HELMET_FRAMES_TO_REPORT = 3;
+const PPE_FRAMES_TO_REPORT = 3;
+
+export function buildStreamUrl(value) {
+  if (!value) return '';
+  if (value.startsWith('http://') || value.startsWith('https://')) {
+    try {
+      const url = new URL(value);
+      return `${url.protocol}//${url.hostname}:81/stream`;
+    } catch {
+      return value;
+    }
+  }
+  return `http://${value}:81/stream`;
+}
 
 export function useDetection(cameraIP, isConnected) {
   const canvasRef = useRef(null);
-  const cropCanvasRef = useRef(null);
+  const streamImageRef = useRef(null);
   const timerRef = useRef(null);
-  const detectFrameRef = useRef(null);
-  const lastHelmetAlertRef = useRef(0);
-  const noHelmetFrameCountRef = useRef(0);
+  const inferenceInFlightRef = useRef(false);
+  const lastAlertRef = useRef(0);
+  const violationFrameCountRef = useRef(0);
   const { addNotification } = useNotifications();
   const { user } = useAuth();
   const userId = user?.uid;
-  const [cocoModel, setCocoModel] = useState(null);
-  const [faceModel, setFaceModel] = useState(null);
-  const [helmetModel, setHelmetModel] = useState(null);
-  const [helmetMetadata, setHelmetMetadata] = useState(null);
+  const [ppeModel, setPpeModel] = useState(null);
   const [loading, setLoading] = useState(false);
   const [detecting, setDetecting] = useState(false);
   const [error, setError] = useState(null);
   const [detections, setDetections] = useState({
     persons: 0,
-    faces: 0,
     helmets: 0,
+    vests: 0,
+    shoes: 0,
     noHelmets: 0,
+    noVests: 0,
+    noShoes: 0,
+    violations: 0,
   });
   const modelLoadPromiseRef = useRef(null);
   const modelLoadStartedRef = useRef(false);
 
   async function loadModels() {
-    if (modelLoadPromiseRef.current) {
-      return modelLoadPromiseRef.current;
-    }
+    if (modelLoadPromiseRef.current) return modelLoadPromiseRef.current;
 
     modelLoadStartedRef.current = true;
     setLoading(true);
@@ -57,16 +62,11 @@ export function useDetection(cameraIP, isConnected) {
     const promise = (async () => {
       try {
         const models = await loadPpeDetectionModels();
-
-        setCocoModel(models.personModel);
-        setFaceModel(models.faceModel);
-        setHelmetModel(models.helmetModel);
-        setHelmetMetadata(models.helmetMetadata);
+        setPpeModel(models.ppeModel);
         return models;
       } catch (err) {
-        console.error('Failed to load detection models:', err);
-        const message = err?.message || 'Unknown error';
-        setError(`Failed to load AI models. ${message}`);
+        console.error('Failed to load PPE detection model:', err);
+        setError(`Failed to load AI model. ${err?.message || 'Unknown error'}`);
         modelLoadPromiseRef.current = null;
         throw err;
       } finally {
@@ -79,154 +79,110 @@ export function useDetection(cameraIP, isConnected) {
   }
 
   const detectFrame = useCallback(async () => {
-    if (!cocoModel || !faceModel || !canvasRef.current || !cameraIP) return;
+    const image = streamImageRef.current;
+    if (
+      inferenceInFlightRef.current ||
+      !ppeModel ||
+      !canvasRef.current ||
+      !image ||
+      !image.complete ||
+      !image.naturalWidth
+    ) return;
+
+    inferenceInFlightRef.current = true;
 
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
 
     try {
-      const response = await fetch(buildCaptureUrl(cameraIP));
-      if (!response.ok) throw new Error('Capture failed');
+      ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+      const ppeObjects = await detectPpeObjects({ ppeModel, canvas });
+      const groups = groupPpeDetections(ppeObjects, canvas.width);
+      ppeObjects.forEach((detection) => drawPpeResult(ctx, detection));
 
-      const blob = await response.blob();
-      const imageBitmap = await createImageBitmap(blob);
-
-      canvas.width = imageBitmap.width;
-      canvas.height = imageBitmap.height;
-      ctx.drawImage(imageBitmap, 0, 0);
-
-      const brightnessScale = getAutoBrightnessScale(ctx, canvas.width, canvas.height);
-      if (brightnessScale < 1) {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.filter = `brightness(${brightnessScale}) contrast(1.03)`;
-        ctx.drawImage(imageBitmap, 0, 0);
-        ctx.filter = 'none';
-      }
-
-      const [cocoPredictions, facePredictions] = await Promise.all([
-        cocoModel.detect(canvas),
-        faceModel.estimateFaces(canvas, false),
-      ]);
-
-      const persons = cocoPredictions.filter((p) => p.class === 'person');
-      let helmetCount = 0;
-      let noHelmetCount = 0;
-      let confidenceTotal = 0;
-
-      for (const prediction of persons) {
-        const face = findFaceForPerson(prediction, facePredictions);
-        const rawHelmetRegion = face
-          ? getHelmetRegionFromFace(face)
-          : getHelmetRegionFromPerson(prediction);
-        const helmetRegion = clampRegion(rawHelmetRegion, canvas);
-        const cropCanvas = cropCanvasRef.current || document.createElement('canvas');
-        cropCanvasRef.current = cropCanvas;
-        const helmetResult = await classifyHelmetRegion({
-          ctx,
-          canvas,
-          region: helmetRegion,
-          helmetModel,
-          helmetMetadata,
-          cropCanvas,
-        });
-        const { hasHelmet, confidence } = helmetResult;
-        confidenceTotal += confidence || 0;
-
-        if (hasHelmet) {
-          helmetCount++;
-        } else {
-          noHelmetCount++;
-        }
-
-        drawHelmetResult(ctx, helmetRegion, hasHelmet);
-        drawPersonResult(ctx, prediction);
-      }
-
-      facePredictions.forEach((face) => {
-        drawFaceResult(ctx, face);
-      });
+      const helmets = ppeObjects.filter((item) => item.label === 'Safety Helmet').length;
+      const vests = ppeObjects.filter((item) => item.label === 'Safety Vest').length;
+      const shoes = ppeObjects.filter((item) => item.label === 'Safety Shoes').length;
+      const violations = groups.filter((group) => group.missing.length > 0);
+      const noHelmets = violations.filter((group) => !group.hasHelmet).length;
+      const noVests = violations.filter((group) => !group.hasVest).length;
+      const noShoes = violations.filter((group) => !group.hasShoes).length;
 
       setDetections({
-        persons: persons.length,
-        faces: facePredictions.length,
-        helmets: helmetCount,
-        noHelmets: noHelmetCount,
+        persons: groups.length,
+        helmets,
+        vests,
+        shoes,
+        noHelmets,
+        noVests,
+        noShoes,
+        violations: violations.length,
       });
 
-      if (noHelmetCount > 0) {
-        noHelmetFrameCountRef.current += 1;
+      if (violations.length > 0) {
+        violationFrameCountRef.current += 1;
         const now = Date.now();
         if (
-          noHelmetFrameCountRef.current >= NO_HELMET_FRAMES_TO_REPORT &&
-          now - lastHelmetAlertRef.current > VIOLATION_COOLDOWN_MS
+          violationFrameCountRef.current >= PPE_FRAMES_TO_REPORT &&
+          now - lastAlertRef.current > VIOLATION_COOLDOWN_MS
         ) {
-          lastHelmetAlertRef.current = now;
+          lastAlertRef.current = now;
+          const missingItems = [...new Set(violations.flatMap((group) => group.missing))];
+          const missingNames = missingItems.map((item) => item.replace('Safety ', '')).join(', ');
+          const precautions = `Equip required PPE: ${missingNames}.`;
+          const hazardType = `PPE Violation: Missing ${missingNames}`;
+          const description = `${violations.length} worker${violations.length === 1 ? '' : 's'} detected without required ${missingNames}.`;
+
           addNotification({
-            violationType: 'No Safety Helmet',
+            violationType: hazardType,
             cameraSource: cameraIP,
+            message: `${description} ${precautions}`,
             severity: 'high',
           });
           createIncidentReport({
             userId,
-            hazardType: 'No Safety Helmet',
-            hazardCode: 'ppe_no_helmet',
-            description: `${noHelmetCount} worker${noHelmetCount === 1 ? '' : 's'} detected without required head protection.`,
+            hazardType,
+            description,
+            precautions,
             cameraSource: cameraIP,
-            severity: noHelmetCount > 1 ? 'high' : 'medium',
-            detectionConfidence: persons.length ? confidenceTotal / persons.length : 0,
-            model: 'helmet-ppe',
-            detectedWorkers: persons.length,
-            helmets: helmetCount,
-            noHelmets: noHelmetCount,
+            severity: 'high',
+            detectedWorkers: groups.length,
+            helmets,
+            noHelmets,
+            vests,
+            noVests,
+            shoes,
+            noShoes,
           });
         }
       } else {
-        noHelmetFrameCountRef.current = 0;
+        violationFrameCountRef.current = 0;
       }
-
-      imageBitmap.close();
     } catch (err) {
-      console.warn('Detection frame error:', err.message);
+      console.warn('PPE detection frame error:', err.message);
+    } finally {
+      inferenceInFlightRef.current = false;
     }
 
-    if (detecting) {
-      timerRef.current = setTimeout(() => detectFrameRef.current?.(), 500);
-    }
-  }, [
-    cocoModel,
-    faceModel,
-    helmetModel,
-    helmetMetadata,
-    cameraIP,
-    detecting,
-    addNotification,
-    userId,
-  ]);
+  }, [ppeModel, cameraIP, addNotification, userId]);
 
   useEffect(() => {
-    detectFrameRef.current = detectFrame;
-  }, [detectFrame]);
-
-  useEffect(() => {
-    if (detecting && cocoModel && faceModel && helmetModel && isConnected && cameraIP) {
+    if (detecting && ppeModel && isConnected && cameraIP) {
       detectFrame();
+      timerRef.current = setInterval(detectFrame, 500);
     }
     return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
+      if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [detecting, cocoModel, faceModel, helmetModel, isConnected, cameraIP, detectFrame]);
+  }, [detecting, ppeModel, isConnected, cameraIP, detectFrame]);
 
   useEffect(() => {
     let idleId = null;
+    if (!isConnected || !cameraIP || modelLoadStartedRef.current) return undefined;
 
-    if (!isConnected || !cameraIP || modelLoadStartedRef.current) {
-      return undefined;
-    }
-
-    const scheduleLoad = () => {
-      loadModels().catch(() => {});
-    };
-
+    const scheduleLoad = () => loadModels().catch(() => {});
     if ('requestIdleCallback' in window) {
       idleId = window.requestIdleCallback(scheduleLoad, { timeout: 2000 });
     } else {
@@ -235,11 +191,8 @@ export function useDetection(cameraIP, isConnected) {
 
     return () => {
       if (idleId !== null) {
-        if ('cancelIdleCallback' in window) {
-          window.cancelIdleCallback(idleId);
-        } else {
-          window.clearTimeout(idleId);
-        }
+        if ('cancelIdleCallback' in window) window.cancelIdleCallback(idleId);
+        else window.clearTimeout(idleId);
       }
     };
   }, [cameraIP, isConnected]);
@@ -247,18 +200,12 @@ export function useDetection(cameraIP, isConnected) {
   function toggleDetection() {
     if (detecting) {
       setDetecting(false);
-      if (timerRef.current) clearTimeout(timerRef.current);
+      if (timerRef.current) clearInterval(timerRef.current);
       return;
     }
 
-    if (!cocoModel || !faceModel || !helmetModel) {
-      loadModels()
-        .then(() => {
-          setDetecting(true);
-        })
-        .catch(() => {
-          // error is handled in loadModels
-        });
+    if (!ppeModel) {
+      loadModels().then(() => setDetecting(true)).catch(() => {});
       return;
     }
 
@@ -267,6 +214,8 @@ export function useDetection(cameraIP, isConnected) {
 
   return {
     canvasRef,
+    streamImageRef,
+    streamUrl: buildStreamUrl(cameraIP),
     loading,
     error,
     detections,

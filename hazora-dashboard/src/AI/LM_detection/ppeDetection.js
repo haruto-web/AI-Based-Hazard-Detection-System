@@ -1,9 +1,13 @@
 import * as tf from '@tensorflow/tfjs';
-import * as cocoSsd from '@tensorflow-models/coco-ssd';
-import * as blazeface from '@tensorflow-models/blazeface';
+import * as tflite from '@tensorflow/tfjs-tflite/dist/tf-tflite.es2017.js';
 
 export const HELMET_MODEL_URL = '/models/helmet/model.json';
 export const HELMET_METADATA_URL = '/models/helmet/metadata.json';
+export const PPE_MODEL_URL = '/models/ppe/yolov8n.tflite';
+export const PPE_LABELS = ['Safety Helmet', 'Safety Vest', 'Safety Shoes'];
+export const PPE_INPUT_SIZE = 640;
+export const PPE_CONFIDENCE_THRESHOLD = 0.45;
+export const PPE_IOU_THRESHOLD = 0.45;
 
 const HELMET_COLOR_THRESHOLD = 0.14;
 const HELMET_CONFIDENCE_THRESHOLD = 0.65;
@@ -53,21 +57,150 @@ export function getAutoBrightnessScale(ctx, width, height) {
 export async function loadPpeDetectionModels() {
   await tf.ready();
 
-  const [personModel, faceModel, helmetModel, helmetMetaResponse] = await Promise.all([
-    cocoSsd.load({ base: 'lite_mobilenet_v2' }),
-    blazeface.load(),
-    tf.loadLayersModel(HELMET_MODEL_URL),
-    fetch(HELMET_METADATA_URL),
-  ]);
-
-  const helmetMetadata = await helmetMetaResponse.json();
+  const ppeModel = await tflite.loadTFLiteModel(PPE_MODEL_URL, {
+    numThreads: Math.max(1, Math.floor((navigator.hardwareConcurrency || 2) / 2)),
+  });
 
   return {
-    personModel,
-    faceModel,
-    helmetModel,
-    helmetMetadata,
+    ppeModel,
+    ppeLabels: PPE_LABELS,
   };
+}
+
+function iou(a, b) {
+  const left = Math.max(a.x, b.x);
+  const top = Math.max(a.y, b.y);
+  const right = Math.min(a.x + a.width, b.x + b.width);
+  const bottom = Math.min(a.y + a.height, b.y + b.height);
+  const intersection = Math.max(0, right - left) * Math.max(0, bottom - top);
+  const union = a.width * a.height + b.width * b.height - intersection;
+  return union > 0 ? intersection / union : 0;
+}
+
+function nonMaximumSuppression(detections) {
+  const sorted = [...detections].sort((a, b) => b.score - a.score);
+  const kept = [];
+
+  while (sorted.length) {
+    const best = sorted.shift();
+    kept.push(best);
+    for (let index = sorted.length - 1; index >= 0; index -= 1) {
+      if (sorted[index].label === best.label && iou(sorted[index].box, best.box) > PPE_IOU_THRESHOLD) {
+        sorted.splice(index, 1);
+      }
+    }
+  }
+
+  return kept;
+}
+
+export async function detectPpeObjects({ ppeModel, canvas }) {
+  if (!ppeModel || !canvas) return [];
+
+  const input = tf.tidy(() => (
+    tf.browser.fromPixels(canvas)
+      .resizeBilinear([PPE_INPUT_SIZE, PPE_INPUT_SIZE])
+      .toFloat()
+      .div(255)
+      .expandDims(0)
+  ));
+
+  let output;
+  try {
+    output = ppeModel.predict(input);
+    const shape = output.shape || [];
+    const values = await output.data();
+    const channelsFirst = shape[shape.length - 2] === 4 + PPE_LABELS.length;
+    const candidateCount = channelsFirst ? shape[shape.length - 1] : shape[shape.length - 2];
+    const detections = [];
+    const scaleX = canvas.width / PPE_INPUT_SIZE;
+    const scaleY = canvas.height / PPE_INPUT_SIZE;
+
+    for (let index = 0; index < candidateCount; index += 1) {
+      const getValue = (channel) => channelsFirst
+        ? values[channel * candidateCount + index]
+        : values[index * (4 + PPE_LABELS.length) + channel];
+      let bestClass = -1;
+      let bestScore = 0;
+      for (let classIndex = 0; classIndex < PPE_LABELS.length; classIndex += 1) {
+        const score = getValue(4 + classIndex);
+        if (score > bestScore) {
+          bestScore = score;
+          bestClass = classIndex;
+        }
+      }
+
+      if (bestClass < 0 || bestScore < PPE_CONFIDENCE_THRESHOLD) continue;
+
+      const centerX = getValue(0);
+      const centerY = getValue(1);
+      const width = getValue(2);
+      const height = getValue(3);
+      detections.push({
+        label: PPE_LABELS[bestClass],
+        score: bestScore,
+        box: {
+          x: Math.max(0, (centerX - width / 2) * scaleX),
+          y: Math.max(0, (centerY - height / 2) * scaleY),
+          width: Math.min(canvas.width, (centerX + width / 2) * scaleX) - Math.max(0, (centerX - width / 2) * scaleX),
+          height: Math.min(canvas.height, (centerY + height / 2) * scaleY) - Math.max(0, (centerY - height / 2) * scaleY),
+        },
+      });
+    }
+
+    return nonMaximumSuppression(detections);
+  } finally {
+    output?.dispose?.();
+    input.dispose();
+  }
+}
+
+export function groupPpeDetections(detections, canvasWidth) {
+  const groups = [];
+  const groupingDistance = canvasWidth * 0.25;
+
+  detections.forEach((detection) => {
+    const centerX = detection.box.x + detection.box.width / 2;
+    const group = groups.find((candidate) => Math.abs(candidate.centerX - centerX) < groupingDistance);
+    if (group) {
+      group.detections.push(detection);
+      group.centerX = group.detections.reduce((sum, item) => sum + item.box.x + item.box.width / 2, 0) / group.detections.length;
+    } else {
+      groups.push({ centerX, detections: [detection] });
+    }
+  });
+
+  return groups.map((group) => {
+    const labels = new Set(group.detections.map((detection) => detection.label));
+    const missing = PPE_LABELS.filter((label) => !labels.has(label));
+    return {
+      detections: group.detections,
+      hasHelmet: labels.has('Safety Helmet'),
+      hasVest: labels.has('Safety Vest'),
+      hasShoes: labels.has('Safety Shoes'),
+      missing,
+    };
+  });
+}
+
+export function drawPpeResult(ctx, detection) {
+  const colorByLabel = {
+    'Safety Helmet': '#22c55e',
+    'Safety Vest': '#f59e0b',
+    'Safety Shoes': '#38bdf8',
+  };
+  const color = colorByLabel[detection.label] || '#ffffff';
+  const { x, y, width, height } = detection.box;
+  const label = `${detection.label} ${Math.round(detection.score * 100)}%`;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 3;
+  ctx.strokeRect(x, y, width, height);
+  ctx.font = 'bold 13px Arial';
+  const textWidth = ctx.measureText(label).width;
+  ctx.fillStyle = color;
+  ctx.fillRect(x, Math.max(0, y - 22), textWidth + 10, 22);
+  ctx.fillStyle = '#000';
+  ctx.fillText(label, x + 5, Math.max(14, y - 6));
 }
 
 function getHelmetRegionStats(imageData) {

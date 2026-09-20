@@ -49,7 +49,7 @@
 #define WIFI_RECONNECT_INTERVAL   30000   // Check Wi-Fi every 30 seconds
 #define WIFI_RECONNECT_ATTEMPTS   5       // Max reconnect attempts before restart
 #define WATCHDOG_TIMEOUT_S        30      // Watchdog timeout in seconds
-#define STREAM_MAX_CLIENTS        3       // Max simultaneous stream clients
+#define STREAM_MAX_CLIENTS        4       // Three visible web streams plus one AI analysis stream
 #define FRAME_TIMEOUT_MS          5000    // Max time to wait for a frame
 #define SETUP_AP_SSID             "HAZORA_CAM_SETUP"
 #define SETUP_AP_PASSWORD         "00112233"   // Must be 8+ characters
@@ -330,6 +330,8 @@ static esp_err_t stream_handler(httpd_req_t *req) {
   }
 
   httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Headers", "Content-Type");
+  httpd_resp_set_hdr(req, "Cache-Control", "no-cache, no-store, must-revalidate");
   httpd_resp_set_hdr(req, "X-Framerate", "15");
 
   while (true) {
@@ -381,6 +383,7 @@ static esp_err_t capture_handler(httpd_req_t *req) {
   httpd_resp_set_type(req, "image/jpeg");
   httpd_resp_set_hdr(req, "Content-Disposition", "inline; filename=capture.jpg");
   httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Headers", "Content-Type");
   httpd_resp_set_hdr(req, "Cache-Control", "no-cache, no-store, must-revalidate");
 
   esp_err_t res = httpd_resp_send(req, (const char *)fb->buf, fb->len);

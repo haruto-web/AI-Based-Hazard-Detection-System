@@ -57,6 +57,16 @@ export default function TopNavBar({ userEmail, onLogout, onNavigateProfile, onNa
     }
   }
 
+  function handleNotificationClick(notification) {
+    markAsRead(notification.id);
+    setShowNotifications(false);
+
+    const destination = notification.destination || notification.view || (
+      notification.sourceType === 'message' ? 'messages' : 'reports'
+    );
+    onNavigate?.(destination);
+  }
+
   // Get user initials from email
   const initials = userEmail
     ? userEmail.substring(0, 2).toUpperCase()
@@ -194,7 +204,7 @@ export default function TopNavBar({ userEmail, onLogout, onNavigateProfile, onNa
                     <button
                       key={notif.id}
                       className={`notif-item ${!notif.read ? 'unread' : ''}`}
-                      onClick={() => markAsRead(notif.id)}
+                      onClick={() => handleNotificationClick(notif)}
                     >
                       <div className="notif-item-content">
                         <span className="notif-type">{notif.violationType || 'Alert'}</span>

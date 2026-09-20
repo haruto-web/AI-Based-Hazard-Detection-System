@@ -4,6 +4,8 @@ import DetectionViewerContent from './DetectionViewerContent';
 export default function DetectionViewer({ cameraIP, isConnected }) {
   const {
     canvasRef,
+    streamImageRef,
+    streamUrl,
     loading,
     error,
     detections,
@@ -17,6 +19,8 @@ export default function DetectionViewer({ cameraIP, isConnected }) {
   return (
     <DetectionViewerContent
       canvasRef={canvasRef}
+      streamImageRef={streamImageRef}
+      streamUrl={streamUrl}
       loading={loading}
       error={error}
       detections={detections}

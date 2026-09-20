@@ -26,8 +26,11 @@ function getRecipientType(value) {
 export default function MessagesPage({ userRole }) {
   const { user } = useAuth();
   const [form, setForm] = useState(initialForm);
+  const [accounts, setAccounts] = useState([]);
+  const [selectedAccount, setSelectedAccount] = useState(null);
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [contactsLoading, setContactsLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [notice, setNotice] = useState(null);
 
@@ -35,18 +38,20 @@ export default function MessagesPage({ userRole }) {
 
   useEffect(() => {
     if (!allowed) {
-      setLoading(false);
       return undefined;
     }
 
     async function loadMessages() {
       try {
-        const messagesQuery = query(
-          collection(db, 'messages'),
-          orderBy('createdAt', 'desc')
-        );
-        const snapshot = await getDocs(messagesQuery);
-        setMessages(snapshot.docs.map((docSnap) => ({
+        const [messagesSnapshot, accountsSnapshot] = await Promise.all([
+          getDocs(query(collection(db, 'messages'), orderBy('createdAt', 'desc'))),
+          getDocs(query(collection(db, 'mobile_accounts'), orderBy('createdAt', 'desc'))),
+        ]);
+        setMessages(messagesSnapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...docSnap.data(),
+        })));
+        setAccounts(accountsSnapshot.docs.map((docSnap) => ({
           id: docSnap.id,
           ...docSnap.data(),
         })));
@@ -55,6 +60,7 @@ export default function MessagesPage({ userRole }) {
         setNotice({ type: 'error', text: 'Unable to load sent messages.' });
       } finally {
         setLoading(false);
+        setContactsLoading(false);
       }
     }
 
@@ -64,6 +70,12 @@ export default function MessagesPage({ userRole }) {
 
   function handleChange(field, value) {
     setForm((prev) => ({ ...prev, [field]: value }));
+  }
+
+  function handleAccountSelect(account) {
+    setSelectedAccount(account);
+    handleChange('recipient', account.username || account.name || '');
+    setNotice(null);
   }
 
   async function handleSubmit(e) {
@@ -116,6 +128,15 @@ export default function MessagesPage({ userRole }) {
     }
   }
 
+  const visibleMessages = selectedAccount
+    ? messages.filter((item) => {
+        const recipient = (item.recipient || '').toLowerCase();
+        return [selectedAccount.username, selectedAccount.name, selectedAccount.id]
+          .filter(Boolean)
+          .some((value) => recipient === value.toLowerCase());
+      })
+    : messages;
+
   if (!allowed) {
     return (
       <div className="messages-page">
@@ -129,77 +150,121 @@ export default function MessagesPage({ userRole }) {
 
   return (
     <div className="messages-page">
-      <section className="messages-panel">
-        <div className="messages-header">
-          <div>
-            <h2>Website to App Messaging</h2>
-            <p>Send a message to a mobile user by email, ID, username, or name.</p>
+      <section className="messages-panel messenger-panel">
+        <aside className="messenger-contacts">
+          <div className="messenger-contacts-header">
+            <div>
+              <h2>Messages</h2>
+              <p>Select a mobile user</p>
+            </div>
+            <span>{accounts.length}</span>
           </div>
-        </div>
-
-        {notice && (
-          <div className={`messages-notice ${notice.type}`}>
-            {notice.text}
+          <div className="contact-list">
+            {contactsLoading ? (
+              <p className="messages-empty">Loading contacts...</p>
+            ) : accounts.length === 0 ? (
+              <p className="messages-empty">No mobile accounts found.</p>
+            ) : (
+              accounts.map((account) => (
+                <button
+                  type="button"
+                  className={`contact-item ${selectedAccount?.id === account.id ? 'active' : ''}`}
+                  key={account.id}
+                  onClick={() => handleAccountSelect(account)}
+                >
+                  <span className="contact-avatar" aria-hidden="true">
+                    {(account.name || account.username || '?').trim().charAt(0).toUpperCase()}
+                  </span>
+                  <span className="contact-details">
+                    <strong>{account.name || account.username}</strong>
+                    <small>{account.username || 'Mobile user'}</small>
+                  </span>
+                </button>
+              ))
+            )}
           </div>
-        )}
+        </aside>
 
-        <form className="message-form" onSubmit={handleSubmit}>
-          <div className="message-field">
-            <label htmlFor="message-recipient">Email / ID / Username / Name</label>
+        <div className="messenger-conversation">
+          <div className="conversation-header">
+            {selectedAccount ? (
+              <>
+                <span className="contact-avatar" aria-hidden="true">
+                  {(selectedAccount.name || selectedAccount.username || '?').trim().charAt(0).toUpperCase()}
+                </span>
+                <div>
+                  <h2>{selectedAccount.name || selectedAccount.username}</h2>
+                  <p>{selectedAccount.username || 'Mobile user'}</p>
+                </div>
+              </>
+            ) : (
+              <div>
+                <h2>Choose a conversation</h2>
+                <p>Select a person on the left to start messaging.</p>
+              </div>
+            )}
+          </div>
+
+          {notice && (
+            <div className={`messages-notice ${notice.type}`}>
+              {notice.text}
+            </div>
+          )}
+
+          <div className="conversation-messages">
+            {loading ? (
+              <p className="messages-empty">Loading messages...</p>
+            ) : !selectedAccount ? (
+              <p className="messages-empty">Choose a person to view the conversation.</p>
+            ) : visibleMessages.length === 0 ? (
+              <p className="messages-empty">No messages with this person yet.</p>
+            ) : (
+              visibleMessages.map((item) => (
+                <article className="message-row" key={item.id}>
+                  <div className="message-row-main">
+                    <div className="message-row-top">
+                      <span className="message-avatar" aria-hidden="true">
+                        {(selectedAccount.name || selectedAccount.username || '?').trim().charAt(0).toUpperCase()}
+                      </span>
+                      <strong>{selectedAccount.name || item.recipient}</strong>
+                      <span className={`message-status ${item.status || 'unread'}`}>
+                        {item.status || 'unread'}
+                      </span>
+                    </div>
+                    <p className="message-bubble">{item.message}</p>
+                  </div>
+                  <span className="message-sender">From {item.senderEmail || 'Website user'}</span>
+                </article>
+              ))
+            )}
+          </div>
+
+          <form className="message-form messenger-composer" onSubmit={handleSubmit}>
             <input
               id="message-recipient"
-              type="text"
+              type="hidden"
               value={form.recipient}
-              onChange={(e) => handleChange('recipient', e.target.value)}
-              placeholder="user@email.com, MOB-001, or Juan Dela Cruz"
-              disabled={sending}
+              readOnly
             />
-          </div>
+            <div className="message-field">
+              <label htmlFor="message-body">Message</label>
+              <textarea
+                id="message-body"
+                value={form.message}
+                onChange={(e) => handleChange('message', e.target.value)}
+                placeholder={selectedAccount ? `Message ${selectedAccount.name || selectedAccount.username}` : 'Select a person first'}
+                disabled={sending || !selectedAccount}
+                rows={3}
+              />
+            </div>
 
-          <div className="message-field">
-            <label htmlFor="message-body">Message</label>
-            <textarea
-              id="message-body"
-              value={form.message}
-              onChange={(e) => handleChange('message', e.target.value)}
-              placeholder="Type message for mobile user"
-              disabled={sending}
-              rows={5}
-            />
-          </div>
-
-          <div className="message-actions">
-            <button type="submit" disabled={sending}>
-              {sending ? 'Sending...' : 'Send Message'}
-            </button>
-          </div>
-        </form>
-      </section>
-
-      <section className="messages-panel">
-        <h3>Sent Messages</h3>
-        {loading ? (
-          <p className="messages-empty">Loading messages...</p>
-        ) : messages.length === 0 ? (
-          <p className="messages-empty">No messages sent yet.</p>
-        ) : (
-          <div className="message-list">
-            {messages.map((item) => (
-              <article className="message-row" key={item.id}>
-                <div className="message-row-main">
-                  <div className="message-row-top">
-                    <strong>{item.recipient}</strong>
-                    <span className={`message-status ${item.status || 'unread'}`}>
-                      {item.status || 'unread'}
-                    </span>
-                  </div>
-                  <p>{item.message}</p>
-                </div>
-                <span className="message-sender">{item.senderEmail || 'Website user'}</span>
-              </article>
-            ))}
-          </div>
-        )}
+            <div className="message-actions">
+              <button type="submit" disabled={sending || !selectedAccount}>
+                {sending ? 'Sending...' : 'Send Message'}
+              </button>
+            </div>
+          </form>
+        </div>
       </section>
     </div>
   );
