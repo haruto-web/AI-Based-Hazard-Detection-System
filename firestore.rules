@@ -21,30 +21,22 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'HSE Head - Head Office';
     }
 
-    // --- MOBILE APP ACCESS (NO FIREBASE AUTH REQUIRED) ---
+    // --- MOBILE APP COMPATIBLE RULES (No Firebase Auth Required) ---
 
     match /mobile_accounts/{accountId} {
-      // Allow the app to verify credentials and check active status.
       allow read: if true;
-      // Allow the app user to update their password after login.
       allow update: if true;
-      // Restrict account management to HSE Head via website.
       allow create, delete: if isHSEHead();
     }
 
     match /messages/{messageId} {
-      // Website signed-in users can send messages to the mobile app.
-      allow create: if isSignedIn();
-      // Website and mobile app can read messages; mobile app can mark them as read.
-      allow read, update: if true;
-      allow delete: if isHeadOffice();
+      // Updated to allow delete for mobile app cleanup features
+      allow create, read, update, delete: if true;
     }
 
     match /incidents/{incidentId} {
-      // Allow mobile app to see incidents and dashboard to count stats.
-      allow read: if true;
-      allow create, update: if true;
-      allow delete: if isHeadOffice();
+      // Updated to allow delete for removing resolved/done incidents from mobile
+      allow read, create, update, delete: if true;
     }
 
     match /detections/{detectionId} {

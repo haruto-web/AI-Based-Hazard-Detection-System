@@ -89,6 +89,19 @@
   color: var(--accent);
 }
 
+.forgot-password-btn {
+  align-self: flex-end;
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 0.82rem;
+  padding: 0.2rem 0;
+}
+
+.forgot-password-btn:hover:not(:disabled) { color: var(--accent-hover); text-decoration: underline; }
+.forgot-password-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
 .form-select {
   padding: 0.8rem 1rem;
   border: 1px solid var(--border);
@@ -111,6 +124,7 @@
 .form-select option { background: var(--bg-card); color: var(--text-primary); }
 
 .auth-error { color: var(--error); font-size: 0.85rem; padding: 0.6rem 0.85rem; background: rgba(244, 67, 54, 0.08); border-radius: 8px; border: 1px solid rgba(244, 67, 54, 0.15); }
+.auth-success { color: var(--success); font-size: 0.85rem; padding: 0.6rem 0.85rem; background: rgba(76, 175, 80, 0.08); border-radius: 8px; border: 1px solid rgba(76, 175, 80, 0.15); }
 
 .auth-btn {
   padding: 0.85rem;

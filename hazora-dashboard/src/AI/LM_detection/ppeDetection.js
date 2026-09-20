@@ -8,6 +8,7 @@ export const PPE_LABELS = ['Safety Helmet', 'Safety Vest', 'Safety Shoes'];
 export const PPE_INPUT_SIZE = 640;
 export const PPE_CONFIDENCE_THRESHOLD = 0.45;
 export const PPE_IOU_THRESHOLD = 0.45;
+const TFLITE_WASM_PATH = '/tflite/';
 
 const HELMET_COLOR_THRESHOLD = 0.14;
 const HELMET_CONFIDENCE_THRESHOLD = 0.65;
@@ -56,6 +57,7 @@ export function getAutoBrightnessScale(ctx, width, height) {
 
 export async function loadPpeDetectionModels() {
   await tf.ready();
+  tflite.setWasmPath(TFLITE_WASM_PATH);
 
   const ppeModel = await tflite.loadTFLiteModel(PPE_MODEL_URL, {
     numThreads: Math.max(1, Math.floor((navigator.hardwareConcurrency || 2) / 2)),

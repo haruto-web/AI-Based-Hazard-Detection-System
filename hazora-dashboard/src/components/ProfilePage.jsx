@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
+import { sendPasswordResetEmail } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { auth, db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { ROLES } from '../config/roles';
 import '../styles/ProfilePage.css';
@@ -16,6 +17,7 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [resettingPassword, setResettingPassword] = useState(false);
   const [message, setMessage] = useState(null);
 
   // Load profile from Firestore
@@ -92,6 +94,20 @@ export default function ProfilePage() {
       console.warn('Profile save error:', err.message);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleResetPassword() {
+    setMessage(null);
+    setResettingPassword(true);
+    try {
+      await sendPasswordResetEmail(auth, user.email);
+      setMessage({ type: 'success', text: 'Password reset instructions have been sent to your email.' });
+    } catch (err) {
+      setMessage({ type: 'error', text: 'Unable to send reset instructions. Please try again.' });
+      console.warn('Password reset error:', err.message);
+    } finally {
+      setResettingPassword(false);
     }
   }
 
@@ -204,6 +220,21 @@ export default function ProfilePage() {
             </div>
           )}
         </form>
+
+        <div className="profile-security">
+          <div>
+            <h3>Password</h3>
+            <p>Send a password reset link to your account email.</p>
+          </div>
+          <button
+            type="button"
+            className="reset-password-btn"
+            onClick={handleResetPassword}
+            disabled={resettingPassword}
+          >
+            {resettingPassword ? 'Sending...' : 'Reset Password'}
+          </button>
+        </div>
       </div>
     </div>
   );

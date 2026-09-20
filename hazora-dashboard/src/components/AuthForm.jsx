@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
+import { createUserWithEmailAndPassword, sendPasswordResetEmail, signInWithEmailAndPassword } from 'firebase/auth';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { Link } from 'react-router-dom';
@@ -114,6 +114,25 @@ export default function AuthForm({ mode, onSuccess }) {
       
       // Log failed login attempt
       await logLoginFailed(email, err.code);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleForgotPassword() {
+    setError(null);
+
+    if (!email.trim() || !isValidEmail(email)) {
+      setError('Enter your account email first, then select Forgot password.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await sendPasswordResetEmail(auth, email.trim().toLowerCase());
+      setError({ type: 'success', text: 'Password reset instructions have been sent to your email.' });
+    } catch (err) {
+      setError(getErrorMessage(err.code));
     } finally {
       setLoading(false);
     }
@@ -240,11 +259,21 @@ export default function AuthForm({ mode, onSuccess }) {
                 </span>
               </div>
             )}
+            {!isRegister && (
+              <button
+                type="button"
+                className="forgot-password-btn"
+                onClick={handleForgotPassword}
+                disabled={loading}
+              >
+                Forgot password?
+              </button>
+            )}
           </div>
 
           {error && (
-            <p className="auth-error" role="alert" aria-live="polite">
-              {error}
+            <p className={error.type === 'success' ? 'auth-success' : 'auth-error'} role="alert" aria-live="polite">
+              {typeof error === 'string' ? error : error.text}
             </p>
           )}
 
