@@ -184,7 +184,7 @@ function getStatus() {
 // =============================================================================
 bool initCamera() {
   camera_config_t config;
-  framesize_t selectedFrameSize = FRAMESIZE_QVGA;
+  framesize_t selectedFrameSize;
   config.ledc_channel = LEDC_CHANNEL_0;
   config.ledc_timer = LEDC_TIMER_0;
   config.pin_d0 = Y2_GPIO_NUM;
@@ -203,46 +203,64 @@ bool initCamera() {
   config.pin_sccb_scl = SIOC_GPIO_NUM;
   config.pin_pwdn = PWDN_GPIO_NUM;
   config.pin_reset = RESET_GPIO_NUM;
-  config.xclk_freq_hz = 10000000;
+  config.xclk_freq_hz = 20000000;        // 20MHz instead of 10MHz - sharper, less motion smear
   config.pixel_format = PIXFORMAT_JPEG;
 
-  // Use the smallest reliable test mode first. If this works, you can raise
-  // the frame size later.
   if (psramFound()) {
-    Serial.println("[CAM] PSRAM found - using QQVGA with 1 PSRAM frame buffer");
-    selectedFrameSize = FRAMESIZE_QQVGA;
+    Serial.println("[CAM] PSRAM found - using VGA with 2 frame buffers");
+    selectedFrameSize = FRAMESIZE_VGA;   // 640x480, was QQVGA (160x120)
     config.frame_size = selectedFrameSize;
-    config.jpeg_quality = 15;
-    config.fb_count = 1;
+    config.jpeg_quality = 10;            // was 15 - lower number = higher quality
+    config.fb_count = 2;
     config.fb_location = CAMERA_FB_IN_PSRAM;
-    config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
+    config.grab_mode = CAMERA_GRAB_LATEST;
   } else {
-    Serial.println("[CAM] No PSRAM - using QQVGA with 1 DRAM frame buffer");
-    selectedFrameSize = FRAMESIZE_QQVGA;
+    Serial.println("[CAM] No PSRAM - using CIF with 1 frame buffer");
+    selectedFrameSize = FRAMESIZE_CIF;   // 400x296, was QQVGA (160x120)
     config.frame_size = selectedFrameSize;
-    config.jpeg_quality = 15;
+    config.jpeg_quality = 12;
     config.fb_count = 1;
     config.fb_location = CAMERA_FB_IN_DRAM;
     config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
   }
 
-  // Initialize camera
   esp_err_t err = esp_camera_init(&config);
   if (err != ESP_OK) {
     Serial.printf("[CAM] ERROR: Camera init failed with error 0x%x\n", err);
     return false;
   }
 
-  // Configure sensor settings
   sensor_t *s = esp_camera_sensor_get();
   if (s) {
     s->set_framesize(s, selectedFrameSize);
-    s->set_hmirror(s, 1);                  // Horizontal mirror
-    s->set_vflip(s, 0);                    // No vertical flip
-    s->set_exposure_ctrl(s, 1);            // Let the sensor compensate for bright/dark scenes
-    s->set_gain_ctrl(s, 1);                // Keep analog gain automatic
-    s->set_brightness(s, 0);               // Do not add a permanent brightness boost
-    s->set_saturation(s, 0);               // Normal saturation
+    s->set_hmirror(s, 1);
+    s->set_vflip(s, 0);
+
+    // Exposure - auto, with the better AEC2 algorithm (this is the "auto fix" part)
+    s->set_exposure_ctrl(s, 1);
+    s->set_aec2(s, 1);              // advanced auto-exposure algorithm
+    s->set_ae_level(s, 0);          // target exposure level, -2..2, 0 = neutral
+
+    // Gain - auto, but cap the ceiling so low light doesn't get noisy/green
+    s->set_gain_ctrl(s, 1);
+    s->set_gainceiling(s, GAINCEILING_4X);
+
+    // White balance - this was completely off before, hence the green tint
+    s->set_whitebal(s, 1);
+    s->set_awb_gain(s, 1);
+    s->set_wb_mode(s, 0);           // 0 = auto
+
+    // Image quality helpers
+    s->set_brightness(s, 0);
+    s->set_saturation(s, 0);
+    s->set_contrast(s, 0);
+    s->set_sharpness(s, 0);
+    s->set_denoise(s, 1);
+    s->set_lenc(s, 1);              // lens correction - reduces edge darkening
+    s->set_bpc(s, 1);               // black pixel correction
+    s->set_wpc(s, 1);               // white pixel correction
+    s->set_raw_gma(s, 1);
+    s->set_dcw(s, 1);
   }
 
   Serial.println("[CAM] Camera initialized successfully");
