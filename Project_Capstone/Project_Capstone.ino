@@ -2,9 +2,11 @@
  * HAZORA - Hazard Detection System
  * ESP32-CAM Wi-Fi Provisioning Portal & Camera Stream
  * 
- * v2.8 - IP Display in Captive Portal (Working)
+ * v2.9 - IP Display Before Camera Startup
  * - After WiFi connects, keeps AP alive to show success page with IP
  * - User sees IP and clicks Done to proceed
+ * - Shows the IP before camera initialization so setup feedback still works
+ *   even if the camera module fails to start
  * - Uses dual-mode WiFi (AP+STA) to keep portal open
  * 
  * Uses WiFiManager for captive portal provisioning.
@@ -204,20 +206,21 @@ bool initCamera() {
   config.xclk_freq_hz = 10000000;
   config.pixel_format = PIXFORMAT_JPEG;
 
-  // PSRAM detection: use higher resolution and more buffers if available
+  // Use the smallest reliable test mode first. If this works, you can raise
+  // the frame size later.
   if (psramFound()) {
-    Serial.println("[CAM] PSRAM found - using VGA with 2 frame buffers");
-    selectedFrameSize = FRAMESIZE_VGA;
+    Serial.println("[CAM] PSRAM found - using QQVGA with 1 PSRAM frame buffer");
+    selectedFrameSize = FRAMESIZE_QQVGA;
     config.frame_size = selectedFrameSize;
-    config.jpeg_quality = 10;
-    config.fb_count = 2;
+    config.jpeg_quality = 15;
+    config.fb_count = 1;
     config.fb_location = CAMERA_FB_IN_PSRAM;
-    config.grab_mode = CAMERA_GRAB_LATEST;
+    config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
   } else {
-    Serial.println("[CAM] No PSRAM - using QVGA with 1 frame buffer");
-    selectedFrameSize = FRAMESIZE_QVGA;
+    Serial.println("[CAM] No PSRAM - using QQVGA with 1 DRAM frame buffer");
+    selectedFrameSize = FRAMESIZE_QQVGA;
     config.frame_size = selectedFrameSize;
-    config.jpeg_quality = 12;
+    config.jpeg_quality = 15;
     config.fb_count = 1;
     config.fb_location = CAMERA_FB_IN_DRAM;
     config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
@@ -548,8 +551,9 @@ void handleSuccessPage() {
     ".note{color:#64748b;font-size:0.8rem;margin-top:1rem;}"
     "</style></head><body>"
     "<div class='c'>"
-    "<h1>&#10003; Connected Successfully!</h1>"
-    "<p>Camera is now online</p>"
+    "<h1>&#10003; Wi-Fi Connected!</h1>"
+    "<p>Your ESP32-CAM received an IP address.</p>"
+    "<p>Save this IP, tap Done, then reconnect to your normal Wi-Fi or hotspot.</p>"
     "<div class='lbl'>Camera IP Address:</div>"
     "<div class='ip'>" + ip + "</div>"
     "<div class='lbl'>Camera Website:</div>"
@@ -557,8 +561,9 @@ void handleSuccessPage() {
     "<div class='info'>"
     "<p><strong>Next Steps:</strong></p>"
     "<p>1. Save the camera website URL above</p>"
-    "<p>2. Open it from any browser on the same WiFi</p>"
-    "<p>3. Enter the IP in the Hazora Dashboard stream box</p>"
+    "<p>2. Tap Done to start the camera stream server</p>"
+    "<p>3. Reconnect your phone/laptop to the normal Wi-Fi or hotspot</p>"
+    "<p>4. Open the camera URL or enter the IP in Hazora</p>"
     "</div>"
     "<a href='/done' class='btn'>Done</a>"
     "<p class='note'>Click Done after you've saved the IP address.</p>"
@@ -588,6 +593,8 @@ void showSuccessPortal() {
   
   Serial.printf("[PORTAL] Success page AP started at: %s\n", apIP.toString().c_str());
   Serial.printf("[PORTAL] Showing IP: %s\n", WiFi.localIP().toString().c_str());
+  Serial.printf("[PORTAL] Connect to WiFi '%s' and open %s\n",
+                SETUP_AP_SSID, (String("http://") + apIP.toString()).c_str());
 
   // Captive portal redirect: any phone/browser request goes to the IP success page.
   successDnsServer.start(DNS_PORT, "*", apIP);
@@ -605,7 +612,7 @@ void showSuccessPortal() {
   
   Serial.println("[PORTAL] Waiting for user to click Done...");
   
-  // Keep serving until user clicks Done or 2 minutes timeout
+  // Keep serving until user clicks Done or timeout
   unsigned long startTime = millis();
   unsigned long timeout = SUCCESS_PORTAL_TIMEOUT;
   
@@ -613,6 +620,11 @@ void showSuccessPortal() {
     successDnsServer.processNextRequest();
     successServer.handleClient();
     delay(10);
+  }
+
+  // Let the browser receive the /done response before shutting down the AP.
+  if (portalDone) {
+    delay(1000);
   }
   
   // Cleanup: stop AP, switch to STA only
@@ -638,7 +650,7 @@ void setup() {
   Serial.println("");
   Serial.println("========================================");
   Serial.println("  🎥 HAZORA - Hazard Detection System");
-  Serial.println("  ESP32-CAM v2.8 (IP Display in Portal)");
+  Serial.println("  ESP32-CAM v2.9 (IP Display Before Camera Startup)");
   Serial.println("========================================");
   Serial.println("  Network: WiFi Router OR Mobile Hotspot");
   Serial.println("  Streaming: LOCAL SITE ONLY");
@@ -649,7 +661,7 @@ void setup() {
   Serial.println();
   Serial.println("========================================");
   Serial.println("  HAZORA - Hazard Detection System");
-  Serial.println("  ESP32-CAM v2.8 (IP Display in Portal)");
+  Serial.println("  ESP32-CAM v2.9 (IP Display Before Camera Startup)");
   Serial.println("========================================");
   Serial.println("  Network: WiFi Router OR Mobile Hotspot");
   Serial.println("  Streaming: LOCAL SITE ONLY");
@@ -661,6 +673,14 @@ void setup() {
   // Turn off the LED (GPIO 4)
   pinMode(LED_GPIO_NUM, OUTPUT);
   digitalWrite(LED_GPIO_NUM, LOW);
+
+  // Initialize the camera before Wi-Fi. Wi-Fi/WiFiManager can consume the
+  // DMA-capable memory needed by the camera frame buffer.
+  if (!initCamera()) {
+    Serial.println("[SETUP] Camera init failed! Restarting in 5 seconds...");
+    delay(5000);
+    ESP.restart();
+  }
 
   // --- WiFiManager Provisioning Flow ---
   wifiManager.setConfigPortalTimeout(0);
@@ -705,26 +725,14 @@ void setup() {
     ESP.restart();
   }
   
-  // WiFi connected! Now show the IP on the AP so user can see it
+  // WiFi connected. Keep the device on the normal WiFi and start the camera
+  // server immediately so the displayed IP is reachable from the laptop.
   assignedIP = WiFi.localIP().toString();
   Serial.printf("[WIFI] Connected! IP: %s\n", assignedIP.c_str());
-  
-  // Show the assigned IP and camera website after every successful boot/connection.
-  showSuccessPortal();
 
   // Connection successful
   WiFi.setSleep(false);
   WiFi.setAutoReconnect(true);  // Enable auto-reconnect at driver level
-
-  // Enable watchdog timer AFTER WiFi connection (30 second timeout)
-  esp_task_wdt_config_t wdt_config = {
-    .timeout_ms = WATCHDOG_TIMEOUT_S * 1000,
-    .idle_core_mask = (1 << portNUM_PROCESSORS) - 1,
-    .trigger_panic = true
-  };
-  esp_task_wdt_init(&wdt_config);
-  esp_task_wdt_add(NULL);
-  Serial.println("[WATCHDOG] Enabled (30s timeout)");
 
   #if 0
   // Static IP is configured before autoConnect above.
@@ -753,12 +761,22 @@ void setup() {
 
   Serial.println("[WIFI] Connected successfully!");
 
-  // --- Camera Initialization ---
-  if (!initCamera()) {
-    Serial.println("[SETUP] Camera init failed! Restarting in 5 seconds...");
-    delay(5000);
-    ESP.restart();
+  // Show the assigned IP on the setup AP immediately after Wi-Fi setup.
+  // This must happen before startHttpServer(), because both use port 80.
+  if (configPortalStarted || credentialsSavedInPortal) {
+    showSuccessPortal();
   }
+
+  // Enable watchdog timer after camera init, so a failed camera does not
+  // trigger a watchdog panic before the planned restart.
+  esp_task_wdt_config_t wdt_config = {
+    .timeout_ms = WATCHDOG_TIMEOUT_S * 1000,
+    .idle_core_mask = (1 << portNUM_PROCESSORS) - 1,
+    .trigger_panic = true
+  };
+  esp_task_wdt_init(&wdt_config);
+  esp_task_wdt_add(NULL);
+  Serial.println("[WATCHDOG] Enabled (30s timeout)");
 
   // --- Start HTTP Server ---
   startHttpServer();

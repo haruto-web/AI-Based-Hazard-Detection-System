@@ -121,10 +121,13 @@ export default function Dashboard() {
                   <CollapsibleGuide title="Camera Setup Guide" defaultOpen={false}>
                     <ol>
                       <li>Power on the ESP32-CAM</li>
-                      <li>Connect your phone/laptop to Wi-Fi: <strong>HAZORA_CAM_SETUP</strong></li>
-                      <li>A setup page opens — enter your Wi-Fi name and password</li>
+                      <li>Connect your phone to Wi-Fi: <strong>HAZORA_CAM_SETUP</strong></li>
+                      <li>Use password: <strong>00112233</strong></li>
+                      <li>Open your phone browser: <strong>http://192.168.4.1</strong></li>
+                      <li>Choose your Wi-Fi or mobile hotspot network</li>
+                      <li>Enter your Wi-Fi name and password</li>
                       <li>The camera connects and shows its IP and website URL</li>
-                      <li>Open the camera website URL below if you are on the same network</li>
+                      <li>Reconnect your phone/laptop to the same Wi-Fi or hotspot</li>
                       <li>Enter the IP in any stream box and click the arrow to connect</li>
                     </ol>
                     <div className="saved-camera-sites">
