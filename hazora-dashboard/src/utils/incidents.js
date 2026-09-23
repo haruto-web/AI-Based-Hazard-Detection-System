@@ -1,6 +1,7 @@
 import { jsPDF } from 'jspdf';
 import { addDoc, collection, limit, onSnapshot, orderBy, query, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
+import { computeReportSummary, computePpeBreakdown } from './analytics';
 
 const INCIDENTS_KEY = 'hazora_incidents';
 export const INCIDENTS_UPDATED_EVENT = 'hazora_incidents_updated';
@@ -43,12 +44,18 @@ export function normalizeIncident(incident) {
     hazardType,
     hazardCode: incident.hazardCode || hazardType.toLowerCase().replace(/[^a-z0-9]+/g, '_'),
     description: incident.description || `${hazardType} detected at ${incident.cameraSource || 'unknown camera'}.`,
+    precautions: incident.precautions || '',
     severity,
     status: incident.status || 'open',
     detectionConfidence: Number(incident.detectionConfidence) || 0,
     detectedWorkers: Number(incident.detectedWorkers) || 0,
     helmets: Number(incident.helmets) || 0,
     noHelmets: Number(incident.noHelmets) || 0,
+    vests: Number(incident.vests) || 0,
+    noVests: Number(incident.noVests) || 0,
+    shoes: Number(incident.shoes) || 0,
+    noShoes: Number(incident.noShoes) || 0,
+    compliant: Number(incident.compliant) || 0,
   };
 }
 
@@ -57,6 +64,7 @@ export async function createIncidentReport({
   hazardType,
   hazardCode,
   description,
+  precautions,
   cameraSource,
   severity = 'medium',
   detectionConfidence = 0,
@@ -65,6 +73,11 @@ export async function createIncidentReport({
   detectedWorkers = 0,
   helmets = 0,
   noHelmets = 0,
+  vests = 0,
+  noVests = 0,
+  shoes = 0,
+  noShoes = 0,
+  compliant = 0,
 }) {
   const now = new Date();
   const incident = normalizeIncident({
@@ -75,6 +88,7 @@ export async function createIncidentReport({
     hazardType,
     hazardCode,
     description,
+    precautions,
     cameraSource,
     severity,
     detectionConfidence,
@@ -83,6 +97,11 @@ export async function createIncidentReport({
     detectedWorkers,
     helmets,
     noHelmets,
+    vests,
+    noVests,
+    shoes,
+    noShoes,
+    compliant,
   });
 
   const incidents = [incident, ...readStoredIncidents()].slice(0, 500);
@@ -100,6 +119,27 @@ export async function createIncidentReport({
   }
 
   return incident;
+}
+
+export const INCIDENT_STATUSES = ['open', 'acknowledged', 'resolved'];
+
+// Update an incident's workflow status locally and (if signed in) in Firestore.
+export async function updateIncidentStatus(userId, incidentId, status) {
+  if (!INCIDENT_STATUSES.includes(status)) return;
+
+  const incidents = readStoredIncidents().map((incident) =>
+    incident.id === incidentId ? { ...incident, status } : incident
+  );
+  writeStoredIncidents(incidents);
+
+  if (userId) {
+    try {
+      const { doc, updateDoc } = await import('firebase/firestore');
+      await updateDoc(doc(db, 'users', userId, 'incidents', incidentId), { status });
+    } catch (err) {
+      console.warn('Failed to update incident status in Firestore:', err.message);
+    }
+  }
 }
 
 export function subscribeToIncidents(userId, onIncidents) {
@@ -157,19 +197,25 @@ export function filterIncidentsByMonthYear(incidents, monthYear) {
 
 export function buildIncidentCsv(incidents) {
   const rows = [
-    ['Date', 'Time', 'Hazard Type', 'Description', 'Camera Source', 'Severity', 'Status', 'Confidence', 'Workers', 'Helmet', 'No Helmet', 'Detection Model'],
+    ['Date', 'Time', 'Hazard Type', 'Description', 'Recommended Action', 'Camera Source', 'Severity', 'Status', 'Confidence', 'Workers', 'Compliant', 'Helmet', 'No Helmet', 'Vest', 'No Vest', 'Shoes', 'No Shoes', 'Detection Model'],
     ...incidents.map((incident) => [
       incident.date,
       incident.time,
       incident.hazardType,
       incident.description || '',
+      incident.precautions || '',
       incident.cameraSource,
       incident.severity,
       incident.status || 'open',
       incident.detectionConfidence ? `${Math.round(incident.detectionConfidence * 100)}%` : 'N/A',
       incident.detectedWorkers || 0,
+      incident.compliant || 0,
       incident.helmets || 0,
       incident.noHelmets || 0,
+      incident.vests || 0,
+      incident.noVests || 0,
+      incident.shoes || 0,
+      incident.noShoes || 0,
       incident.model || 'unknown',
     ]),
   ];
@@ -194,8 +240,10 @@ export function buildIncidentPdf(incidents, title = 'Hazora Safety Report') {
   doc.text(`Generated: ${new Date().toLocaleString()}`, margin, margin + 20);
 
   const reportRows = incidents.map(normalizeIncident);
-  const totalWorkers = reportRows.reduce((sum, incident) => sum + incident.detectedWorkers, 0);
-  const highRiskCount = reportRows.filter((incident) => ['high', 'critical'].includes(incident.severity)).length;
+  const summary = computeReportSummary(reportRows);
+  const ppeBreakdown = computePpeBreakdown(reportRows);
+  const totalWorkers = summary.totalWorkers;
+  const highRiskCount = summary.highRisk;
   const severityCounts = reportRows.reduce((counts, incident) => {
     counts[incident.severity] = (counts[incident.severity] || 0) + 1;
     return counts;
@@ -217,24 +265,56 @@ export function buildIncidentPdf(incidents, title = 'Hazora Safety Report') {
   const cardWidth = (contentWidth - cardGap * 2) / 3;
   const cards = [
     ['Total incidents', reportRows.length],
-    ['High-risk incidents', highRiskCount],
+    ['PPE compliance', `${summary.overallCompliance.toFixed(0)}%`],
     ['Workers observed', totalWorkers],
+    ['High-risk incidents', highRiskCount],
+    ['Avg confidence', `${Math.round(summary.avgConfidence * 100)}%`],
+    ['Resolved', summary.resolved],
   ];
   cards.forEach(([label, value], index) => {
-    const x = margin + index * (cardWidth + cardGap);
+    const col = index % 3;
+    const row = Math.floor(index / 3);
+    const x = margin + col * (cardWidth + cardGap);
+    const cardY = y + row * 50;
     doc.setFillColor(245, 248, 252);
     doc.setDrawColor(225, 230, 236);
-    doc.roundedRect(x, y, cardWidth, 42, 4, 4, 'FD');
+    doc.roundedRect(x, cardY, cardWidth, 42, 4, 4, 'FD');
     doc.setFontSize(8);
     doc.setTextColor(80, 90, 100);
-    doc.text(label, x + 9, y + 15);
+    doc.text(label, x + 9, cardY + 15);
     doc.setFontSize(16);
     doc.setTextColor(20, 34, 52);
     doc.setFont(undefined, 'bold');
-    doc.text(String(value), x + 9, y + 34);
+    doc.text(String(value), x + 9, cardY + 34);
     doc.setFont(undefined, 'normal');
   });
-  y += 58;
+  y += 50 * Math.ceil(cards.length / 3) + 12;
+
+  // PPE compliance breakdown per item.
+  doc.setFontSize(11);
+  doc.setTextColor(30, 42, 55);
+  doc.setFont(undefined, 'bold');
+  doc.text('PPE compliance by item', margin, y);
+  doc.setFont(undefined, 'normal');
+  y += 14;
+
+  const ppeBarWidth = contentWidth - 150;
+  ppeBreakdown.forEach((item, index) => {
+    const rowY = y + index * 20;
+    const pct = item.complianceRate;
+    doc.setFontSize(9);
+    doc.setTextColor(50, 60, 70);
+    doc.text(item.item, margin, rowY + 9);
+    doc.setFillColor(235, 238, 242);
+    doc.roundedRect(margin + 60, rowY, ppeBarWidth, 11, 3, 3, 'F');
+    const fillColor = pct >= 80 ? [65, 145, 90] : pct >= 50 ? [220, 160, 40] : [200, 60, 45];
+    doc.setFillColor(...fillColor);
+    if (pct > 0) doc.roundedRect(margin + 60, rowY, Math.max(4, (pct / 100) * ppeBarWidth), 11, 3, 3, 'F');
+    doc.setFontSize(8);
+    doc.setTextColor(70, 80, 90);
+    doc.text(`${pct.toFixed(0)}%  (${item.present} worn / ${item.missing} missing)`, margin + 60 + ppeBarWidth + 6, rowY + 9);
+  });
+  y += ppeBreakdown.length * 20 + 16;
 
   doc.setFontSize(10);
   doc.setTextColor(30, 42, 55);
@@ -295,7 +375,9 @@ export function buildIncidentPdf(incidents, title = 'Hazora Safety Report') {
   rows.forEach((incident, index) => {
     const normalized = normalizeIncident(incident);
     const descriptionLines = doc.splitTextToSize(normalized.description, contentWidth - 20);
-    const rowHeight = 76 + Math.max(0, descriptionLines.length - 1) * 11;
+    const actionText = normalized.precautions ? `Recommended action: ${normalized.precautions}` : '';
+    const actionLines = actionText ? doc.splitTextToSize(actionText, contentWidth - 20) : [];
+    const rowHeight = 76 + Math.max(0, descriptionLines.length - 1) * 11 + (actionLines.length ? actionLines.length * 11 + 4 : 0);
 
     if (y + rowHeight > 800) {
       doc.addPage();
@@ -316,6 +398,11 @@ export function buildIncidentPdf(incidents, title = 'Hazora Safety Report') {
     doc.text(`Status: ${normalized.status}  |  Confidence: ${normalized.detectionConfidence ? `${Math.round(normalized.detectionConfidence * 100)}%` : 'N/A'}  |  Model: ${normalized.model || 'unknown'}`, margin + 10, y + 45);
     doc.setTextColor(45, 55, 65);
     doc.text(descriptionLines, margin + 10, y + 60);
+    if (actionLines.length) {
+      const actionY = y + 60 + descriptionLines.length * 11 + 4;
+      doc.setTextColor(150, 70, 20);
+      doc.text(actionLines, margin + 10, actionY);
+    }
     y += rowHeight;
   });
 

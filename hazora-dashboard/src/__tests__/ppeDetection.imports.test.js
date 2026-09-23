@@ -1,54 +1,75 @@
 import { describe, expect, it } from 'vitest';
 import * as tf from '@tensorflow/tfjs';
 import * as cocoSsd from '@tensorflow-models/coco-ssd';
-import * as blazeface from '@tensorflow-models/blazeface';
 import {
   getAutoBrightnessScale,
-  getHelmetRegionFromFace,
-  resolveHelmetDecision,
+  parseYoloOutput,
+  groupPpeDetections,
+  PPE_LABELS,
 } from '../AI/LM_detection/ppeDetection';
 
 describe('TensorFlow model packages', () => {
   it('loads the installed browser ML dependencies', () => {
     expect(tf).toBeTruthy();
     expect(cocoSsd).toBeTruthy();
-    expect(blazeface).toBeTruthy();
     expect(typeof cocoSsd.load).toBe('function');
-    expect(typeof blazeface.load).toBe('function');
   });
 });
 
-describe('Helmet decision logic', () => {
-  it('accepts a helmet when the model is close but color evidence is strong', () => {
-    const decision = resolveHelmetDecision({
-      helmetScore: 0.71,
-      noHelmetScore: 0.29,
-      regionStats: { lowerColorScore: 0.24, colorScore: 0.14, darkScore: 0.08 },
-      colorFallback: true,
-    });
+describe('YOLOv8 output parsing', () => {
+  const channels = 4 + PPE_LABELS.length; // 7
 
-    expect(decision.hasHelmet).toBe(true);
-    expect(decision.confidence).toBeGreaterThanOrEqual(0.55);
+  it('parses a channels-last detection in normalized coordinates', () => {
+    // One candidate: center (0.5, 0.5), size (0.2, 0.4), class 0 (helmet) score 0.9
+    const values = new Float32Array(channels);
+    values[0] = 0.5;
+    values[1] = 0.5;
+    values[2] = 0.2;
+    values[3] = 0.4;
+    values[4] = 0.9; // Safety Helmet
+    values[5] = 0.1; // Safety Vest
+    values[6] = 0.05; // Safety Shoes
+
+    const shape = [1, 1, channels];
+    const result = parseYoloOutput(values, shape, 100, 100);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].label).toBe('Safety Helmet');
+    expect(result[0].box.x).toBeCloseTo(40); // (0.5 - 0.1) * 100
+    expect(result[0].box.width).toBeCloseTo(20);
   });
 
-  it('rejects weak color evidence that can come from background pixels', () => {
-    const decision = resolveHelmetDecision({
-      helmetScore: 0.42,
-      noHelmetScore: 0.58,
-      regionStats: { lowerColorScore: 0.12, colorScore: 0.2, darkScore: 0.08 },
-      colorFallback: true,
-    });
+  it('drops candidates below the confidence threshold', () => {
+    const values = new Float32Array(channels);
+    values[0] = 0.5;
+    values[1] = 0.5;
+    values[2] = 0.2;
+    values[3] = 0.4;
+    values[4] = 0.1; // below 0.45 threshold
 
-    expect(decision.hasHelmet).toBe(false);
+    const shape = [1, 1, channels];
+    expect(parseYoloOutput(values, shape, 100, 100)).toHaveLength(0);
   });
+});
 
-  it('keeps the face helmet crop focused above the face', () => {
-    const region = getHelmetRegionFromFace({ topLeft: [100, 100], bottomRight: [140, 160] });
+describe('PPE grouping', () => {
+  it('groups PPE detections inside a detected person and flags missing items', () => {
+    const detections = [
+      { label: 'Safety Helmet', score: 0.9, box: { x: 45, y: 10, width: 10, height: 10 } },
+    ];
+    const persons = [{ score: 0.95, box: { x: 20, y: 0, width: 60, height: 100 } }];
 
-    expect(region.y).toBeCloseTo(56.8);
-    expect(region.height).toBeCloseTo(43.2);
+    const groups = groupPpeDetections(detections, 100, persons);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].hasHelmet).toBe(true);
+    expect(groups[0].hasVest).toBe(false);
+    expect(groups[0].missing).toContain('Safety Vest');
+    expect(groups[0].missing).toContain('Safety Shoes');
   });
+});
 
+describe('Auto brightness', () => {
   it('dims overexposed frames but leaves normal frames unchanged', () => {
     const brightContext = {
       getImageData: () => ({ data: new Uint8ClampedArray([255, 255, 255, 255]) }),

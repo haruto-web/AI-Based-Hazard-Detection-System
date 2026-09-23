@@ -8,7 +8,14 @@ import {
   getIncidents,
   INCIDENTS_UPDATED_EVENT,
   subscribeToIncidents,
+  updateIncidentStatus,
 } from '../utils/incidents';
+import {
+  computePpeBreakdown,
+  computeComplianceTrend,
+  computeByCamera,
+  computeByHour,
+} from '../utils/analytics';
 import '../styles/AnalyticsDashboard.css';
 
 const TIME_PERIODS = ['Last 24 Hours', 'Last 7 Days', 'Last 30 Days'];
@@ -61,6 +68,13 @@ function StatIcon({ type }) {
           <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z" />
         </svg>
       );
+    case 'confidence':
+      return (
+        <svg viewBox="0 0 24 24">
+          <path d="M12 2a10 10 0 1 0 10 10" />
+          <polyline points="22 4 12 14.01 9 11.01" />
+        </svg>
+      );
     case 'common':
       return (
         <svg viewBox="0 0 24 24">
@@ -75,7 +89,7 @@ function StatIcon({ type }) {
   }
 }
 
-const INCIDENT_COLUMNS = ['Date', 'Time', 'Hazard Type', 'Description', 'Camera Source', 'Severity', 'Status', 'Confidence'];
+const INCIDENT_COLUMNS = ['Date', 'Time', 'Hazard Type', 'Description', 'Recommended Action', 'Camera Source', 'Severity', 'Status', 'Confidence', 'Actions'];
 
 const PAGE_SIZE = 20;
 
@@ -128,30 +142,35 @@ export default function AnalyticsDashboard({ readOnly = false }) {
       (sum, incident) => sum + (incident.detectedWorkers || 0),
       0
     );
-    const helmetCount = filteredIncidents.reduce(
-      (sum, incident) => sum + (incident.helmets || 0),
+    // Overall PPE compliance across all three items (helmet + vest + shoes).
+    const presentCount = filteredIncidents.reduce(
+      (sum, incident) => sum + (incident.helmets || 0) + (incident.vests || 0) + (incident.shoes || 0),
       0
     );
-    const noHelmetCount = filteredIncidents.reduce(
-      (sum, incident) => sum + (incident.noHelmets || 0),
+    const missingCount = filteredIncidents.reduce(
+      (sum, incident) => sum + (incident.noHelmets || 0) + (incident.noVests || 0) + (incident.noShoes || 0),
       0
     );
-    const complianceBase = helmetCount + noHelmetCount;
-    const complianceRate = complianceBase > 0 ? (helmetCount / complianceBase) * 100 : 0;
+    const complianceBase = presentCount + missingCount;
+    const complianceRate = complianceBase > 0 ? (presentCount / complianceBase) * 100 : 0;
 
     const hazardCounts = filteredIncidents.reduce((counts, incident) => {
       counts[incident.hazardType] = (counts[incident.hazardType] || 0) + 1;
       return counts;
     }, {});
     const mostCommonHazard = Object.entries(hazardCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/A';
-    const openIncidents = filteredIncidents.filter((incident) => incident.status === 'open').length;
+    const openIncidents = filteredIncidents.filter((incident) => (incident.status || 'open') === 'open').length;
     const criticalIncidents = filteredIncidents.filter((incident) => ['high', 'critical'].includes(incident.severity)).length;
+    const avgConfidence = filteredIncidents.length
+      ? (filteredIncidents.reduce((s, i) => s + (i.detectionConfidence || 0), 0) / filteredIncidents.length) * 100
+      : 0;
 
     return [
       { id: 'workers', label: 'Workers Observed', value: totalDetectedWorkers, format: 'number' },
-      { id: 'compliance', label: 'Hard Hat Compliance Rate', value: complianceRate, format: 'percent' },
+      { id: 'compliance', label: 'PPE Compliance Rate', value: complianceRate, format: 'percent' },
       { id: 'violations', label: 'Open Incidents', value: openIncidents, format: 'number' },
       { id: 'gas', label: 'High Risk Incidents', value: criticalIncidents, format: 'number' },
+      { id: 'confidence', label: 'Avg Detection Confidence', value: avgConfidence, format: 'percent' },
       { id: 'common', label: 'Most Common Hazard', value: mostCommonHazard, format: 'text' },
     ];
   }, [filteredIncidents]);
@@ -174,8 +193,17 @@ export default function AnalyticsDashboard({ readOnly = false }) {
       severityCounts,
       hazardCounts: Object.entries(hazardCounts).sort((a, b) => b[1] - a[1]).slice(0, 5),
       dailyCounts: Object.entries(dailyCounts).slice(-7),
+      ppeBreakdown: computePpeBreakdown(filteredIncidents),
+      complianceTrend: computeComplianceTrend(filteredIncidents).slice(-7),
+      byCamera: computeByCamera(filteredIncidents).slice(0, 5),
+      byHour: computeByHour(filteredIncidents),
     };
   }, [filteredIncidents]);
+
+  const peakHour = useMemo(() => {
+    const top = [...insightData.byHour].sort((a, b) => b.count - a.count)[0];
+    return top && top.count > 0 ? top.hour : null;
+  }, [insightData.byHour]);
 
   const totalPages = Math.ceil(filteredIncidents.length / PAGE_SIZE) || 1;
   const paginatedIncidents = filteredIncidents.slice(
@@ -362,6 +390,97 @@ export default function AnalyticsDashboard({ readOnly = false }) {
           </div>
         </section>
       </div>
+      {/* PPE compliance breakdown per item */}
+      <section className="chart-section">
+        <h3 className="section-title">PPE compliance by item</h3>
+        <div className="ppe-breakdown">
+          {insightData.ppeBreakdown.every((item) => item.total === 0) ? (
+            <p className="chart-empty-message">No PPE data recorded for this period</p>
+          ) : (
+            insightData.ppeBreakdown.map((item) => (
+              <div className="ppe-breakdown-row" key={item.item}>
+                <div className="ppe-breakdown-head">
+                  <span className="ppe-breakdown-label">{item.item}</span>
+                  <span className="ppe-breakdown-rate">{item.complianceRate.toFixed(0)}% compliant</span>
+                </div>
+                <div className="ppe-breakdown-track">
+                  <span className="ppe-breakdown-fill" style={{ width: `${item.complianceRate}%` }} />
+                </div>
+                <div className="ppe-breakdown-meta">
+                  <span className="ppe-present">{item.present} worn</span>
+                  <span className="ppe-missing">{item.missing} missing</span>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </section>
+
+      <div className="insight-grid">
+        {/* Compliance rate trend */}
+        <section className="chart-section">
+          <h3 className="section-title">Compliance rate trend</h3>
+          {insightData.complianceTrend.length === 0 ? (
+            <p className="chart-empty-message">No data in this period</p>
+          ) : (
+            <div className="trend-chart" aria-label="Compliance rate by day">
+              {insightData.complianceTrend.map((day) => (
+                <div className="trend-column" key={day.date}>
+                  <span className="trend-value">{day.complianceRate}%</span>
+                  <div
+                    className="trend-bar compliance"
+                    style={{ height: `${Math.max(8, day.complianceRate * 1.4)}px` }}
+                  />
+                  <span className="trend-label">{day.date}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* Incidents by camera / location */}
+        <section className="chart-section">
+          <h3 className="section-title">Violations by camera</h3>
+          {insightData.byCamera.length === 0 ? (
+            <p className="chart-empty-message">No camera data in this period</p>
+          ) : (
+            <div className="hazard-list">
+              {insightData.byCamera.map((cam) => (
+                <div className="hazard-row" key={cam.camera}>
+                  <span>{cam.camera}</span>
+                  <strong>{cam.incidents}</strong>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+
+      {/* Peak violation hours */}
+      <section className="chart-section">
+        <h3 className="section-title">
+          Violations by time of day
+          {peakHour !== null && (
+            <span className="section-subtitle"> • peak around {String(peakHour).padStart(2, '0')}:00</span>
+          )}
+        </h3>
+        {insightData.byHour.every((h) => h.count === 0) ? (
+          <p className="chart-empty-message">No time-of-day data in this period</p>
+        ) : (
+          <div className="hour-chart" aria-label="Violations by hour">
+            {insightData.byHour.map((bucket) => {
+              const max = Math.max(...insightData.byHour.map((h) => h.count), 1);
+              return (
+                <div className="hour-column" key={bucket.hour} title={`${bucket.count} at ${bucket.hour}:00`}>
+                  <div className="hour-bar" style={{ height: `${(bucket.count / max) * 60 + 2}px` }} />
+                  <span className="hour-label">{bucket.hour}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
       <section className="chart-section">
         <h3 className="section-title">Top hazards</h3>
         <div className="hazard-list">
@@ -397,14 +516,41 @@ export default function AnalyticsDashboard({ readOnly = false }) {
                     <td>{incident.time}</td>
                     <td>{incident.hazardType}</td>
                     <td className="incident-description">{incident.description}</td>
+                    <td className="incident-action">{incident.precautions || '—'}</td>
                     <td>{incident.cameraSource}</td>
                     <td>
                       <span className={`severity-badge ${incident.severity}`}>
                         {incident.severity}
                       </span>
                     </td>
-                    <td>{incident.status}</td>
+                    <td>
+                      <span className={`status-badge ${incident.status || 'open'}`}>
+                        {incident.status || 'open'}
+                      </span>
+                    </td>
                     <td>{incident.detectionConfidence ? `${Math.round(incident.detectionConfidence * 100)}%` : 'N/A'}</td>
+                    <td>
+                      {!readOnly && (incident.status || 'open') !== 'resolved' ? (
+                        <div className="incident-actions">
+                          {(incident.status || 'open') === 'open' && (
+                            <button
+                              className="incident-action-btn ack"
+                              onClick={() => updateIncidentStatus(user?.uid, incident.id, 'acknowledged')}
+                            >
+                              Acknowledge
+                            </button>
+                          )}
+                          <button
+                            className="incident-action-btn resolve"
+                            onClick={() => updateIncidentStatus(user?.uid, incident.id, 'resolved')}
+                          >
+                            Resolve
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="incident-actions-done">—</span>
+                      )}
+                    </td>
                   </tr>
                 ))
               )}

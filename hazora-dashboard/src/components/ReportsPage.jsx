@@ -2,12 +2,14 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import {
   buildIncidentCsv,
+  buildIncidentPdf,
   filterIncidentsByPeriod,
   filterIncidentsByMonthYear,
   getIncidents,
   INCIDENTS_UPDATED_EVENT,
   subscribeToIncidents,
 } from '../utils/incidents';
+import { computeReportSummary } from '../utils/analytics';
 import '../styles/ReportsPage.css';
 
 const PAGE_SIZE = 20;
@@ -49,6 +51,7 @@ export default function ReportsPage({ readOnly = false }) {
   const monthPickerRef = useRef(null);
   const [showGenerateDialog, setShowGenerateDialog] = useState(false);
   const [generateRange, setGenerateRange] = useState('Last 7 Days');
+  const [generateFormat, setGenerateFormat] = useState('pdf');
   const [generateDate, setGenerateDate] = useState(() => toDateInputValue(new Date()));
   const [calendarMonth, setCalendarMonth] = useState(() => new Date());
 
@@ -79,11 +82,15 @@ export default function ReportsPage({ readOnly = false }) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  const [previewReport, setPreviewReport] = useState(null);
+
   const filteredIncidents = useMemo(() => (
     selectedMonth
       ? filterIncidentsByMonthYear(incidents, selectedMonth)
       : filterIncidentsByPeriod(incidents, timePeriod)
   ), [incidents, selectedMonth, timePeriod]);
+
+  const summary = useMemo(() => computeReportSummary(filteredIncidents), [filteredIncidents]);
 
   const reports = useMemo(() => {
     const grouped = filteredIncidents.reduce((groups, incident) => {
@@ -93,14 +100,36 @@ export default function ReportsPage({ readOnly = false }) {
       return groups;
     }, {});
 
-    return Object.entries(grouped).map(([date, group]) => ({
-      date,
-      timePeriod: 'Daily Incident Report',
-      totalIncidents: group.length,
-      incidents: group,
-      downloadUrl: URL.createObjectURL(new Blob([buildIncidentCsv(group)], { type: 'text/csv;charset=utf-8' })),
-    }));
+    return Object.entries(grouped)
+      .map(([date, group]) => ({
+        date,
+        timePeriod: 'Daily Incident Report',
+        totalIncidents: group.length,
+        incidents: group,
+        summary: computeReportSummary(group),
+      }))
+      .sort((a, b) => new Date(b.date) - new Date(a.date));
   }, [filteredIncidents]);
+
+  function downloadReportCsv(group, date) {
+    const blob = new Blob([buildIncidentCsv(group)], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `hazora-${String(date).replace(/\//g, '-')}-report.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function downloadReportPdf(group, date) {
+    try {
+      const doc = buildIncidentPdf(group, `Hazora Safety Report — ${date}`);
+      doc.save(`hazora-${String(date).replace(/\//g, '-')}-report.pdf`);
+    } catch (error) {
+      console.error('Failed to generate PDF:', error);
+      window.alert('PDF export is unavailable. Use CSV export instead.');
+    }
+  }
 
   const totalPages = Math.ceil(reports.length / PAGE_SIZE) || 1;
   const paginatedReports = reports.slice(
@@ -110,13 +139,25 @@ export default function ReportsPage({ readOnly = false }) {
 
   function handleGenerate() {
     const generatedIncidents = filterIncidentsByPeriod(incidents, generateRange, generateDate);
-    const blob = new Blob([buildIncidentCsv(generatedIncidents)], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `hazora-${generateRange.toLowerCase().replace(/\s+/g, '-')}-report.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+    const baseName = `hazora-${generateRange.toLowerCase().replace(/\s+/g, '-')}-report`;
+
+    if (generateFormat === 'pdf') {
+      try {
+        const doc = buildIncidentPdf(generatedIncidents, `Hazora Safety Report — ${generateRange}`);
+        doc.save(`${baseName}.pdf`);
+      } catch (error) {
+        console.error('Failed to generate PDF:', error);
+        window.alert('PDF export is unavailable. Use CSV export instead.');
+      }
+    } else {
+      const blob = new Blob([buildIncidentCsv(generatedIncidents)], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${baseName}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+    }
     setShowGenerateDialog(false);
   }
 
@@ -230,21 +271,55 @@ export default function ReportsPage({ readOnly = false }) {
         </div>
       </div>
 
+      {/* Summary bar for the selected period */}
+      <div className="reports-summary">
+        <div className="reports-summary-card">
+          <span className="reports-summary-label">Total incidents</span>
+          <span className="reports-summary-value">{summary.totalIncidents}</span>
+        </div>
+        <div className="reports-summary-card">
+          <span className="reports-summary-label">PPE compliance</span>
+          <span className="reports-summary-value">{summary.overallCompliance.toFixed(0)}%</span>
+        </div>
+        <div className="reports-summary-card">
+          <span className="reports-summary-label">Workers observed</span>
+          <span className="reports-summary-value">{summary.totalWorkers}</span>
+        </div>
+        <div className="reports-summary-card">
+          <span className="reports-summary-label">High-risk</span>
+          <span className="reports-summary-value">{summary.highRisk}</span>
+        </div>
+        <div className="reports-summary-card">
+          <span className="reports-summary-label">Most missed PPE</span>
+          <span className="reports-summary-value small">
+            {summary.worstItem && summary.worstItem.total > 0
+              ? `${summary.worstItem.item} (${summary.worstItem.complianceRate.toFixed(0)}%)`
+              : 'N/A'}
+          </span>
+        </div>
+        <div className="reports-summary-card">
+          <span className="reports-summary-label">Resolved</span>
+          <span className="reports-summary-value">{summary.resolved}</span>
+        </div>
+      </div>
+
       {/* Reports Table */}
       <div className="reports-table-wrapper">
         <table className="reports-table">
           <thead>
             <tr>
               <th>Report Date</th>
-              <th>Time Period</th>
-              <th>Total Incidents</th>
-              <th>Download</th>
+              <th>Type</th>
+              <th>Incidents</th>
+              <th>Compliance</th>
+              <th>Workers</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
             {paginatedReports.length === 0 ? (
               <tr>
-                <td colSpan={4} className="reports-empty">
+                <td colSpan={6} className="reports-empty">
                   No reports available for this site
                 </td>
               </tr>
@@ -254,10 +329,20 @@ export default function ReportsPage({ readOnly = false }) {
                   <td>{report.date}</td>
                   <td>{report.timePeriod}</td>
                   <td>{report.totalIncidents}</td>
+                  <td>{report.summary.overallCompliance.toFixed(0)}%</td>
+                  <td>{report.summary.totalWorkers}</td>
                   <td>
-                    <a href={report.downloadUrl || '#'} className="download-link" download={`hazora-${report.date.replace(/\//g, '-')}-report.csv`}>
-                      Download
-                    </a>
+                    <div className="report-actions">
+                      <button className="report-action-btn preview" onClick={() => setPreviewReport(report)}>
+                        Preview
+                      </button>
+                      <button className="report-action-btn pdf" onClick={() => downloadReportPdf(report.incidents, report.date)}>
+                        PDF
+                      </button>
+                      <button className="report-action-btn csv" onClick={() => downloadReportCsv(report.incidents, report.date)}>
+                        CSV
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))
@@ -265,6 +350,64 @@ export default function ReportsPage({ readOnly = false }) {
           </tbody>
         </table>
       </div>
+
+      {/* Report preview modal */}
+      {previewReport && (
+        <div className="dialog-overlay" onClick={() => setPreviewReport(null)}>
+          <div className="dialog report-preview" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+            <div className="report-preview-header">
+              <h3 className="dialog-title">Report — {previewReport.date}</h3>
+              <button className="report-preview-close" onClick={() => setPreviewReport(null)} aria-label="Close">✕</button>
+            </div>
+
+            <div className="report-preview-summary">
+              <div><span>Incidents</span><strong>{previewReport.summary.totalIncidents}</strong></div>
+              <div><span>Compliance</span><strong>{previewReport.summary.overallCompliance.toFixed(0)}%</strong></div>
+              <div><span>Workers</span><strong>{previewReport.summary.totalWorkers}</strong></div>
+              <div><span>High-risk</span><strong>{previewReport.summary.highRisk}</strong></div>
+            </div>
+
+            <div className="report-preview-breakdown">
+              <h4>PPE compliance by item</h4>
+              {previewReport.summary.breakdown.map((item) => (
+                <div className="report-preview-bar-row" key={item.item}>
+                  <span className="report-preview-bar-label">{item.item}</span>
+                  <div className="report-preview-bar-track">
+                    <span className="report-preview-bar-fill" style={{ width: `${item.complianceRate}%` }} />
+                  </div>
+                  <span className="report-preview-bar-value">{item.complianceRate.toFixed(0)}%</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="report-preview-incidents">
+              <h4>Incidents ({previewReport.incidents.length})</h4>
+              <div className="report-preview-list">
+                {previewReport.incidents.map((incident, i) => (
+                  <div className="report-preview-item" key={i}>
+                    <div className="report-preview-item-head">
+                      <span className={`severity-badge ${incident.severity}`}>{incident.severity}</span>
+                      <strong>{incident.hazardType}</strong>
+                      <span className="report-preview-item-time">{incident.time}</span>
+                    </div>
+                    <p className="report-preview-item-desc">{incident.description}</p>
+                    {incident.precautions && (
+                      <p className="report-preview-item-action">Action: {incident.precautions}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="dialog-actions">
+              <button className="dialog-cancel-btn" onClick={() => setPreviewReport(null)}>Close</button>
+              <button className="dialog-generate-btn" onClick={() => downloadReportPdf(previewReport.incidents, previewReport.date)}>
+                Download PDF
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Pagination */}
       {totalPages > 1 && (
@@ -291,7 +434,7 @@ export default function ReportsPage({ readOnly = false }) {
 
       {/* Note */}
       <p className="reports-note">
-        Full report generation coming soon. Backend integration is not yet connected.
+        Reports are grouped by day. Use Preview to review before exporting as PDF or CSV.
       </p>
 
       {/* Generate Report Dialog */}
@@ -361,6 +504,24 @@ export default function ReportsPage({ readOnly = false }) {
                     aria-checked={generateRange === range}
                   >
                     {range.replace('Last ', '')}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="dialog-field">
+              <label>Format</label>
+              <div className="range-options" role="radiogroup" aria-label="Report format">
+                {['pdf', 'csv'].map((format) => (
+                  <button
+                    type="button"
+                    key={format}
+                    className={`range-option ${generateFormat === format ? 'selected' : ''}`}
+                    onClick={() => setGenerateFormat(format)}
+                    role="radio"
+                    aria-checked={generateFormat === format}
+                  >
+                    {format.toUpperCase()}
                   </button>
                 ))}
               </div>

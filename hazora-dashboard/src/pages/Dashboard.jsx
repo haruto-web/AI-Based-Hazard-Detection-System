@@ -5,6 +5,7 @@ import { auth } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { canAccess, hasFullAccess } from '../config/roles';
 import { useCameraSettings } from '../hooks/useCameraSettings';
+import { useDetection } from '../hooks/useDetection';
 import StreamGrid from '../components/StreamGrid';
 import ConnectionIndicator from '../components/ConnectionIndicator';
 import hazoraLogo from '../assets/hazora-logo.png';
@@ -36,6 +37,10 @@ export default function Dashboard() {
     handleCameraIPChange,
     handleMainStreamChange,
   } = useCameraSettings(user.uid);
+
+  // Detection is owned here so the annotated canvas can overlay the main stream
+  // and the AI Detection panel can share the same state.
+  const detection = useDetection(cameraIP, connectedCount > 0);
 
   function getCameraWebsite(camera) {
     if (!camera) return '';
@@ -151,7 +156,7 @@ export default function Dashboard() {
                   </CollapsibleGuide>
 
                   <Suspense fallback={<div>Loading AI detection viewer…</div>}>
-                    <DetectionViewer cameraIP={cameraIP} isConnected={connectedCount > 0} />
+                    <DetectionViewer detection={detection} isConnected={connectedCount > 0} />
                   </Suspense>
                 </section>
               </div>

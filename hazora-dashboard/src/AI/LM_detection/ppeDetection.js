@@ -1,8 +1,7 @@
 import * as tf from '@tensorflow/tfjs';
 import * as tflite from '@tensorflow/tfjs-tflite/dist/tf-tflite.es2017.js';
+import * as cocoSsd from '@tensorflow-models/coco-ssd';
 
-export const HELMET_MODEL_URL = '/models/helmet/model.json';
-export const HELMET_METADATA_URL = '/models/helmet/metadata.json';
 export const PPE_MODEL_URL = '/models/ppe/yolov8n.tflite';
 export const PPE_LABELS = ['Safety Helmet', 'Safety Vest', 'Safety Shoes'];
 export const PPE_INPUT_SIZE = 640;
@@ -10,8 +9,8 @@ export const PPE_CONFIDENCE_THRESHOLD = 0.45;
 export const PPE_IOU_THRESHOLD = 0.45;
 const TFLITE_WASM_PATH = '/tflite/';
 
-const HELMET_COLOR_THRESHOLD = 0.14;
-const HELMET_CONFIDENCE_THRESHOLD = 0.65;
+// Logged once so the real YOLOv8 output tensor layout can be verified in the console.
+let outputShapeLogged = false;
 
 export function buildCaptureUrl(value) {
   if (!value) return '';
@@ -63,8 +62,11 @@ export async function loadPpeDetectionModels() {
     numThreads: Math.max(1, Math.floor((navigator.hardwareConcurrency || 2) / 2)),
   });
 
+  const personModel = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
+
   return {
     ppeModel,
+    personModel,
     ppeLabels: PPE_LABELS,
   };
 }
@@ -96,68 +98,177 @@ function nonMaximumSuppression(detections) {
   return kept;
 }
 
+// YOLOv8 boxes can come out normalized (0..1) or in input-pixel space (0..640).
+// Detect which by sampling a coordinate, then scale to the canvas accordingly.
+function resolveCoordinateScale(sampleValue, canvasSize, inputSize) {
+  const normalized = sampleValue <= 1.5;
+  const base = normalized ? canvasSize : canvasSize / inputSize;
+  return { normalized, base };
+}
+
+export function parseYoloOutput(values, shape, canvasWidth, canvasHeight) {
+  const channels = 4 + PPE_LABELS.length;
+  // Layout A (channels-first): [1, channels, N]  -> value at [c * N + i]
+  // Layout B (channels-last):  [1, N, channels]  -> value at [i * channels + c]
+  const channelsFirst = shape[shape.length - 2] === channels;
+  const candidateCount = channelsFirst ? shape[shape.length - 1] : shape[shape.length - 2];
+
+  const getValue = (channel, index) => (channelsFirst
+    ? values[channel * candidateCount + index]
+    : values[index * channels + channel]);
+
+  // Sample a center-x from the first candidate to decide normalized vs pixel space.
+  const scaleX = resolveCoordinateScale(getValue(0, 0), canvasWidth, PPE_INPUT_SIZE);
+  const scaleY = resolveCoordinateScale(getValue(1, 0), canvasHeight, PPE_INPUT_SIZE);
+
+  const detections = [];
+  for (let index = 0; index < candidateCount; index += 1) {
+    let bestClass = -1;
+    let bestScore = 0;
+    for (let classIndex = 0; classIndex < PPE_LABELS.length; classIndex += 1) {
+      const score = getValue(4 + classIndex, index);
+      if (score > bestScore) {
+        bestScore = score;
+        bestClass = classIndex;
+      }
+    }
+
+    if (bestClass < 0 || bestScore < PPE_CONFIDENCE_THRESHOLD) continue;
+
+    const centerX = getValue(0, index) * scaleX.base;
+    const centerY = getValue(1, index) * scaleY.base;
+    const width = getValue(2, index) * scaleX.base;
+    const height = getValue(3, index) * scaleY.base;
+
+    const x = Math.max(0, centerX - width / 2);
+    const y = Math.max(0, centerY - height / 2);
+    detections.push({
+      label: PPE_LABELS[bestClass],
+      score: bestScore,
+      box: {
+        x,
+        y,
+        width: Math.min(canvasWidth, centerX + width / 2) - x,
+        height: Math.min(canvasHeight, centerY + height / 2) - y,
+      },
+    });
+  }
+
+  return nonMaximumSuppression(detections);
+}
+
+// Some YOLOv8 TFLite exports expect NCHW ([1,3,H,W]) instead of the NHWC
+// ([1,H,W,3]) that tf.browser.fromPixels produces. Inspect the model's declared
+// input shape and transpose only when the channel dimension is at index 1.
+function modelExpectsChannelsFirst(ppeModel) {
+  try {
+    const inputs = ppeModel.inputs || ppeModel.modelRunner?.inputs;
+    const shape = inputs?.[0]?.shape;
+    // NCHW looks like [1, 3, 640, 640]; NHWC looks like [1, 640, 640, 3].
+    if (Array.isArray(shape) && shape.length === 4) {
+      return shape[1] === 3;
+    }
+  } catch {
+    // Fall through to default below.
+  }
+  return false;
+}
+
 export async function detectPpeObjects({ ppeModel, canvas }) {
   if (!ppeModel || !canvas) return [];
 
-  const input = tf.tidy(() => (
-    tf.browser.fromPixels(canvas)
+  const channelsFirst = modelExpectsChannelsFirst(ppeModel);
+  const input = tf.tidy(() => {
+    const nhwc = tf.browser.fromPixels(canvas)
       .resizeBilinear([PPE_INPUT_SIZE, PPE_INPUT_SIZE])
       .toFloat()
       .div(255)
-      .expandDims(0)
-  ));
+      .expandDims(0);
+    // Transpose [1,H,W,3] -> [1,3,H,W] when the model wants NCHW.
+    return channelsFirst ? nhwc.transpose([0, 3, 1, 2]) : nhwc;
+  });
 
   let output;
+  let runInput = input;
+  let transposed = null;
   try {
-    output = ppeModel.predict(input);
-    const shape = output.shape || [];
-    const values = await output.data();
-    const channelsFirst = shape[shape.length - 2] === 4 + PPE_LABELS.length;
-    const candidateCount = channelsFirst ? shape[shape.length - 1] : shape[shape.length - 2];
-    const detections = [];
-    const scaleX = canvas.width / PPE_INPUT_SIZE;
-    const scaleY = canvas.height / PPE_INPUT_SIZE;
-
-    for (let index = 0; index < candidateCount; index += 1) {
-      const getValue = (channel) => channelsFirst
-        ? values[channel * candidateCount + index]
-        : values[index * (4 + PPE_LABELS.length) + channel];
-      let bestClass = -1;
-      let bestScore = 0;
-      for (let classIndex = 0; classIndex < PPE_LABELS.length; classIndex += 1) {
-        const score = getValue(4 + classIndex);
-        if (score > bestScore) {
-          bestScore = score;
-          bestClass = classIndex;
-        }
+    try {
+      output = ppeModel.predict(runInput);
+    } catch (err) {
+      // Fallback: if the layout guess was wrong, flip NHWC<->NCHW and retry once.
+      if (/shape mismatch/i.test(err?.message || '')) {
+        transposed = channelsFirst
+          ? runInput.transpose([0, 2, 3, 1]) // NCHW -> NHWC
+          : runInput.transpose([0, 3, 1, 2]); // NHWC -> NCHW
+        runInput = transposed;
+        output = ppeModel.predict(runInput);
+      } else {
+        throw err;
       }
-
-      if (bestClass < 0 || bestScore < PPE_CONFIDENCE_THRESHOLD) continue;
-
-      const centerX = getValue(0);
-      const centerY = getValue(1);
-      const width = getValue(2);
-      const height = getValue(3);
-      detections.push({
-        label: PPE_LABELS[bestClass],
-        score: bestScore,
-        box: {
-          x: Math.max(0, (centerX - width / 2) * scaleX),
-          y: Math.max(0, (centerY - height / 2) * scaleY),
-          width: Math.min(canvas.width, (centerX + width / 2) * scaleX) - Math.max(0, (centerX - width / 2) * scaleX),
-          height: Math.min(canvas.height, (centerY + height / 2) * scaleY) - Math.max(0, (centerY - height / 2) * scaleY),
-        },
-      });
     }
 
-    return nonMaximumSuppression(detections);
+    const shape = output.shape || [];
+    if (!outputShapeLogged) {
+      // One-time diagnostic so the exported model's real tensor layout is visible.
+      console.info('[PPE] YOLOv8 output shape:', JSON.stringify(shape));
+      outputShapeLogged = true;
+    }
+    const values = await output.data();
+    return parseYoloOutput(values, shape, canvas.width, canvas.height);
   } finally {
     output?.dispose?.();
+    transposed?.dispose?.();
     input.dispose();
   }
 }
 
-export function groupPpeDetections(detections, canvasWidth) {
+export async function detectPersons({ personModel, canvas }) {
+  if (!personModel || !canvas) return [];
+  const predictions = await personModel.detect(canvas);
+  return predictions
+    .filter((prediction) => prediction.class === 'person')
+    .map((prediction) => ({
+      score: prediction.score,
+      box: {
+        x: prediction.bbox[0],
+        y: prediction.bbox[1],
+        width: prediction.bbox[2],
+        height: prediction.bbox[3],
+      },
+    }));
+}
+
+function boxCenter(box) {
+  return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+}
+
+function pointInBox(point, box) {
+  return (
+    point.x >= box.x &&
+    point.x <= box.x + box.width &&
+    point.y >= box.y &&
+    point.y <= box.y + box.height
+  );
+}
+
+// Group PPE detections by the person that contains them. When no person model
+// output is available, fall back to spatial clustering by horizontal position.
+export function groupPpeDetections(detections, canvasWidth, persons = []) {
+  if (persons.length > 0) {
+    return persons.map((person) => {
+      const owned = detections.filter((detection) => pointInBox(boxCenter(detection.box), person.box));
+      const labels = new Set(owned.map((detection) => detection.label));
+      return {
+        person,
+        detections: owned,
+        hasHelmet: labels.has('Safety Helmet'),
+        hasVest: labels.has('Safety Vest'),
+        hasShoes: labels.has('Safety Shoes'),
+        missing: PPE_LABELS.filter((label) => !labels.has(label)),
+      };
+    });
+  }
+
   const groups = [];
   const groupingDistance = canvasWidth * 0.25;
 
@@ -174,13 +285,12 @@ export function groupPpeDetections(detections, canvasWidth) {
 
   return groups.map((group) => {
     const labels = new Set(group.detections.map((detection) => detection.label));
-    const missing = PPE_LABELS.filter((label) => !labels.has(label));
     return {
       detections: group.detections,
       hasHelmet: labels.has('Safety Helmet'),
       hasVest: labels.has('Safety Vest'),
       hasShoes: labels.has('Safety Shoes'),
-      missing,
+      missing: PPE_LABELS.filter((label) => !labels.has(label)),
     };
   });
 }
@@ -205,316 +315,17 @@ export function drawPpeResult(ctx, detection) {
   ctx.fillText(label, x + 5, Math.max(14, y - 6));
 }
 
-function getHelmetRegionStats(imageData) {
-  const data = imageData.data;
-  const { width, height } = imageData;
-  let helmetPixels = 0;
-  let lowerHelmetPixels = 0;
-  let darkPixels = 0;
-  let visiblePixels = 0;
-  let lowerVisiblePixels = 0;
-
-  for (let i = 0; i < data.length; i += 4) {
-    const pixelIndex = i / 4;
-    const px = pixelIndex % width;
-    const py = Math.floor(pixelIndex / width);
-    const inCenter = px > width * 0.12 && px < width * 0.88;
-    const inLowerBand = py > height * 0.32;
-
-    if (!inCenter) continue;
-
-    const r = data[i];
-    const g = data[i + 1];
-    const b = data[i + 2];
-    const max = Math.max(r, g, b);
-    const min = Math.min(r, g, b);
-    const saturation = max === 0 ? 0 : (max - min) / max;
-    const brightness = max / 255;
-
-    if (brightness < 0.18) continue;
-    visiblePixels++;
-    if (inLowerBand) lowerVisiblePixels++;
-
-    const darkHairLike = brightness < 0.32 && saturation < 0.55;
-    if (darkHairLike && inLowerBand) {
-      darkPixels++;
-    }
-
-    const yellow = r > 125 && g > 95 && b < 105 && saturation > 0.22;
-    const orange = r > 135 && g > 55 && g < 175 && b < 105 && saturation > 0.28;
-    const red = r > 125 && g < 115 && b < 115 && saturation > 0.28;
-    const blue = b > 95 && r < 130 && g > 50 && saturation > 0.24;
-    const green = g > 95 && r < 130 && b < 135 && saturation > 0.24;
-    const brightWhite = r > 165 && g > 165 && b > 155 && saturation < 0.3;
-    const lowLightWhite =
-      brightness > 0.45 &&
-      saturation < 0.26 &&
-      Math.abs(r - g) < 55 &&
-      Math.abs(g - b) < 65;
-
-    if (yellow || orange || red || blue || green || brightWhite || lowLightWhite) {
-      helmetPixels++;
-      if (inLowerBand) lowerHelmetPixels++;
-    }
-  }
-
-  return {
-    colorScore: visiblePixels > 0 ? helmetPixels / visiblePixels : 0,
-    lowerColorScore: lowerVisiblePixels > 0 ? lowerHelmetPixels / lowerVisiblePixels : 0,
-    darkScore: lowerVisiblePixels > 0 ? darkPixels / lowerVisiblePixels : 0,
-  };
-}
-
-export function resolveHelmetDecision({
-  helmetScore,
-  noHelmetScore,
-  regionStats,
-  colorFallback,
-}) {
-  const helmetScoreValue = helmetScore || 0;
-  const noHelmetScoreValue = noHelmetScore || 0;
-  const lowerColorScore = regionStats?.lowerColorScore || 0;
-  const colorScore = regionStats?.colorScore || 0;
-  const darkScore = regionStats?.darkScore || 0;
-
-  const strongHelmetEvidence =
-    helmetScoreValue >= 0.65 &&
-    helmetScoreValue > noHelmetScoreValue + 0.12 &&
-    lowerColorScore >= 0.12;
-
-  const fallbackHelmet =
-    colorFallback &&
-    ((lowerColorScore >= 0.2 &&
-      helmetScoreValue >= 0.55 &&
-      helmetScoreValue > noHelmetScoreValue) || (
-      colorScore >= HELMET_COLOR_THRESHOLD &&
-      helmetScoreValue >= HELMET_CONFIDENCE_THRESHOLD &&
-      helmetScoreValue > noHelmetScoreValue
-    )) &&
-    darkScore < 0.18;
-
-  const hasHelmet = strongHelmetEvidence || fallbackHelmet;
-
-  return {
-    hasHelmet,
-    confidence: Math.max(helmetScoreValue, noHelmetScoreValue),
-  };
-}
-
-export function clampRegion(region, canvas) {
-  const x = Math.max(0, Math.floor(region.x));
-  const y = Math.max(0, Math.floor(region.y));
-  const right = Math.min(canvas.width, Math.ceil(region.x + region.width));
-  const bottom = Math.min(canvas.height, Math.ceil(region.y + region.height));
-
-  return {
-    x,
-    y,
-    width: Math.max(0, right - x),
-    height: Math.max(0, bottom - y),
-  };
-}
-
-export function getHelmetRegionFromFace(face) {
-  const [x1, y1] = face.topLeft;
-  const [x2, y2] = face.bottomRight;
-  const faceWidth = x2 - x1;
-  const faceHeight = y2 - y1;
-
-  return {
-    x: x1 - faceWidth * 0.08,
-    y: y1 - faceHeight * 0.72,
-    width: faceWidth * 1.16,
-    height: faceHeight * 0.72,
-  };
-}
-
-export function getHelmetRegionFromPerson(person) {
-  const [x, y, width, height] = person.bbox;
-  return {
-    x: x + width * 0.2,
-    y,
-    width: width * 0.6,
-    height: height * 0.22,
-  };
-}
-
-function hasHelmetByColor(ctx, canvas, region) {
-  const safeRegion = clampRegion(region, canvas);
-  if (safeRegion.width < 8 || safeRegion.height < 8) return false;
-
-  const imageData = ctx.getImageData(
-    safeRegion.x,
-    safeRegion.y,
-    safeRegion.width,
-    safeRegion.height
-  );
-
-  const stats = getHelmetRegionStats(imageData);
-
-  if (stats.darkScore > 0.24 && stats.lowerColorScore < 0.2) {
-    return false;
-  }
-
-  return (
-    stats.lowerColorScore >= 0.2 ||
-    (stats.colorScore >= HELMET_COLOR_THRESHOLD && stats.darkScore < 0.18)
-  );
-}
-
-export async function classifyHelmetRegion({
-  ctx,
-  canvas,
-  region,
-  helmetModel,
-  helmetMetadata,
-  cropCanvas,
-}) {
-  if (!helmetModel || !helmetMetadata) {
-    return { hasHelmet: hasHelmetByColor(ctx, canvas, region), confidence: null };
-  }
-
-  const safeRegion = clampRegion(region, canvas);
-  if (safeRegion.width < 8 || safeRegion.height < 8) {
-    return { hasHelmet: false, confidence: 0 };
-  }
-
-  const imageData = ctx.getImageData(
-    safeRegion.x,
-    safeRegion.y,
-    safeRegion.width,
-    safeRegion.height
-  );
-  const regionStats = getHelmetRegionStats(imageData);
-
-  if (regionStats.darkScore > 0.22 && regionStats.lowerColorScore < 0.2) {
-    return { hasHelmet: false, confidence: 1 };
-  }
-
-  const imageSize = helmetMetadata.imageSize || 96;
-  cropCanvas.width = imageSize;
-  cropCanvas.height = imageSize;
-
-  const cropCtx = cropCanvas.getContext('2d');
-  cropCtx.drawImage(
-    canvas,
-    safeRegion.x,
-    safeRegion.y,
-    safeRegion.width,
-    safeRegion.height,
-    0,
-    0,
-    imageSize,
-    imageSize
-  );
-
-  const channels = helmetMetadata.grayscale ? 1 : 3;
-  const input = tf.tidy(() => (
-    tf.browser.fromPixels(cropCanvas, channels)
-      .toFloat()
-      .div(255)
-      .expandDims(0)
-  ));
-
-  try {
-    const output = helmetModel.predict(input);
-    const scores = await output.data();
-    output.dispose();
-
-    const labels = helmetMetadata.labels || [];
-    const predictions = labels.map((label, index) => ({
-      label: label.trim().toLowerCase(),
-      probability: scores[index] || 0,
-    }));
-    const helmetPrediction = predictions.find((prediction) => (
-      prediction.label.includes('helmet') && !prediction.label.includes('no')
-    ));
-    const noHelmetPrediction = predictions.find((prediction) => (
-      prediction.label.includes('no') && prediction.label.includes('helmet')
-    ));
-
-    if (!helmetPrediction && !noHelmetPrediction) {
-      return { hasHelmet: hasHelmetByColor(ctx, canvas, region), confidence: null };
-    }
-
-    const helmetScore = helmetPrediction?.probability || 0;
-    const noHelmetScore = noHelmetPrediction?.probability || 0;
-    const decision = resolveHelmetDecision({
-      helmetScore,
-      noHelmetScore,
-      regionStats,
-      colorFallback: hasHelmetByColor(ctx, canvas, region),
-    });
-
-    return decision;
-  } finally {
-    input.dispose();
-  }
-}
-
-export function findFaceForPerson(person, faces) {
-  const [px, py, pw, ph] = person.bbox;
-  return faces.find(face => {
-    const [fx1, fy1] = face.topLeft;
-    const [fx2, fy2] = face.bottomRight;
-    const centerX = (fx1 + fx2) / 2;
-    const centerY = (fy1 + fy2) / 2;
-
-    return (
-      centerX >= px &&
-      centerX <= px + pw &&
-      centerY >= py &&
-      centerY <= py + ph * 0.55
-    );
-  });
-}
-
-export function drawPersonResult(ctx, prediction) {
-  const [x, y, width, height] = prediction.bbox;
+export function drawPersonResult(ctx, person) {
+  const { x, y, width, height } = person.box;
   ctx.strokeStyle = '#00ff00';
   ctx.lineWidth = 3;
   ctx.strokeRect(x, y, width, height);
 
   ctx.fillStyle = '#00ff00';
   ctx.font = 'bold 14px Arial';
-  const label = `Person ${Math.round(prediction.score * 100)}%`;
+  const label = `Person ${Math.round(person.score * 100)}%`;
   const textWidth = ctx.measureText(label).width;
-  ctx.fillRect(x, y - 22, textWidth + 10, 22);
+  ctx.fillRect(x, Math.max(0, y - 22), textWidth + 10, 22);
   ctx.fillStyle = '#000';
-  ctx.fillText(label, x + 5, y - 6);
-}
-
-export function drawHelmetResult(ctx, region, hasHelmet) {
-  const color = hasHelmet ? '#22c55e' : '#ff3b30';
-  const label = hasHelmet ? 'Helmet' : 'No helmet';
-
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 3;
-  ctx.strokeRect(region.x, region.y, region.width, region.height);
-
-  ctx.fillStyle = color;
-  ctx.font = 'bold 13px Arial';
-  const textWidth = ctx.measureText(label).width;
-  ctx.fillRect(region.x, Math.max(0, region.y - 22), textWidth + 10, 22);
-  ctx.fillStyle = '#000';
-  ctx.fillText(label, region.x + 5, Math.max(14, region.y - 6));
-}
-
-export function drawFaceResult(ctx, face) {
-  const start = face.topLeft;
-  const end = face.bottomRight;
-  const size = [end[0] - start[0], end[1] - start[1]];
-
-  ctx.strokeStyle = '#00d4aa';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(start[0], start[1], size[0], size[1]);
-
-  ctx.fillStyle = '#00d4aa';
-  ctx.font = 'bold 12px Arial';
-  const prob = Math.round(face.probability[0] * 100);
-  const faceLabel = `Face ${prob}%`;
-  const textWidth = ctx.measureText(faceLabel).width;
-  ctx.fillRect(start[0], start[1] - 18, textWidth + 8, 18);
-  ctx.fillStyle = '#000';
-  ctx.fillText(faceLabel, start[0] + 4, start[1] - 4);
+  ctx.fillText(label, x + 5, Math.max(14, y - 6));
 }

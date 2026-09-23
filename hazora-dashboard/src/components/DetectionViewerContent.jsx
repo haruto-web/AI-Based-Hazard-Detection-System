@@ -2,10 +2,9 @@ import '../styles/DetectionViewer.css';
 
 export default function DetectionViewerContent({
   canvasRef,
-  streamImageRef,
-  streamUrl,
   loading,
   error,
+  status,
   detections,
   detecting,
   toggleDetection,
@@ -40,11 +39,12 @@ export default function DetectionViewerContent({
             <span className="stat helmet-stat">Helmets: {detections.helmets}</span>
             <span className="stat vest-stat">Vests: {detections.vests}</span>
             <span className="stat shoes-stat">Shoes: {detections.shoes}</span>
+            <span className="stat compliant-stat">Compliant: {detections.compliant}</span>
             <span className={`stat violation-stat${detections.violations > 0 ? ' active' : ''}`}>
               Violations: {detections.violations}
             </span>
           </div>
-          <img ref={streamImageRef} className="detection-stream-source" src={streamUrl} alt="" crossOrigin="anonymous" />
+          {status && <p className="detection-status">{status}</p>}
           <canvas ref={canvasRef} className="detection-canvas" />
         </>
       )}

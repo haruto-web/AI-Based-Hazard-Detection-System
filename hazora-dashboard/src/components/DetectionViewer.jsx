@@ -1,28 +1,26 @@
-import { useDetection } from '../hooks/useDetection';
 import DetectionViewerContent from './DetectionViewerContent';
 
-export default function DetectionViewer({ cameraIP, isConnected }) {
+// Presentational wrapper. Detection state is owned by Dashboard (via useDetection).
+export default function DetectionViewer({ detection, isConnected }) {
+  if (!isConnected || !detection) return null;
+
   const {
     canvasRef,
-    streamImageRef,
-    streamUrl,
     loading,
     error,
+    status,
     detections,
     detecting,
     toggleDetection,
     handleRetry,
-  } = useDetection(cameraIP, isConnected);
-
-  if (!isConnected) return null;
+  } = detection;
 
   return (
     <DetectionViewerContent
       canvasRef={canvasRef}
-      streamImageRef={streamImageRef}
-      streamUrl={streamUrl}
       loading={loading}
       error={error}
+      status={status}
       detections={detections}
       detecting={detecting}
       toggleDetection={toggleDetection}
