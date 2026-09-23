@@ -13,6 +13,7 @@ const initialForm = {
   role: MOBILE_ROLE,
   username: '',
   password: '',
+  site: '',
 };
 
 export default function MobileAccountsPage({ userRole }) {
@@ -64,6 +65,7 @@ export default function MobileAccountsPage({ userRole }) {
     const cleanName = sanitizeInput(form.name.trim());
     const cleanUsername = sanitizeInput(form.username.trim());
     const cleanRole = sanitizeInput(form.role.trim());
+    const cleanSite = sanitizeInput(form.site.trim());
 
     if (cleanName.length < 3) {
       setMessage({ type: 'error', text: 'Account name must be at least 3 characters.' });
@@ -85,6 +87,11 @@ export default function MobileAccountsPage({ userRole }) {
       return;
     }
 
+    if (cleanSite.length < 2) {
+      setMessage({ type: 'error', text: 'Please enter the site location for this officer.' });
+      return;
+    }
+
     setSaving(true);
     try {
       const accountData = {
@@ -92,6 +99,7 @@ export default function MobileAccountsPage({ userRole }) {
         role: cleanRole,
         username: cleanUsername,
         password: form.password,
+        site: cleanSite,
         status: 'active',
         createdBy: user.uid,
         createdByEmail: user.email || '',
@@ -185,6 +193,18 @@ export default function MobileAccountsPage({ userRole }) {
                 disabled={saving}
               />
             </div>
+
+            <div className="mobile-field">
+              <label htmlFor="mobile-site">Site Location</label>
+              <input
+                id="mobile-site"
+                type="text"
+                value={form.site}
+                onChange={(e) => handleChange('site', e.target.value)}
+                placeholder="e.g. Tower B - Level 3"
+                disabled={saving}
+              />
+            </div>
           </div>
 
           <div className="mobile-actions">
@@ -208,6 +228,7 @@ export default function MobileAccountsPage({ userRole }) {
                 <div>
                   <strong>{account.name}</strong>
                   <span>{account.role}</span>
+                  {account.site && <span className="mobile-site-tag">📍 {account.site}</span>}
                 </div>
                 <div>
                   <span className="mobile-credential-label">Username</span>

@@ -189,3 +189,10 @@
     width: 100%;
   }
 }
+
+.mobile-site-tag {
+  display: inline-block;
+  margin-top: 0.25rem;
+  font-size: 0.72rem;
+  color: var(--accent);
+}
