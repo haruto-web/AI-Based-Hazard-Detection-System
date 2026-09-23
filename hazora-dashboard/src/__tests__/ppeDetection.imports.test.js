@@ -53,19 +53,47 @@ describe('YOLOv8 output parsing', () => {
 });
 
 describe('PPE grouping', () => {
-  it('groups PPE detections inside a detected person and flags missing items', () => {
+  it('flags vest and shoes missing when the full body is in frame', () => {
     const detections = [
       { label: 'Safety Helmet', score: 0.9, box: { x: 45, y: 10, width: 10, height: 10 } },
     ];
+    // Person fills the whole 100px-tall frame -> feet visible -> shoes required.
     const persons = [{ score: 0.95, box: { x: 20, y: 0, width: 60, height: 100 } }];
 
-    const groups = groupPpeDetections(detections, 100, persons);
+    const groups = groupPpeDetections(detections, 100, persons, 100);
 
     expect(groups).toHaveLength(1);
     expect(groups[0].hasHelmet).toBe(true);
-    expect(groups[0].hasVest).toBe(false);
     expect(groups[0].missing).toContain('Safety Vest');
     expect(groups[0].missing).toContain('Safety Shoes');
+  });
+
+  it('does NOT require shoes for a headshot where feet are out of frame', () => {
+    const detections = [
+      { label: 'Safety Helmet', score: 0.9, box: { x: 45, y: 5, width: 10, height: 10 } },
+    ];
+    // Person occupies only the top 30% of a 100px frame -> no feet, no torso.
+    const persons = [{ score: 0.95, box: { x: 20, y: 0, width: 60, height: 30 } }];
+
+    const groups = groupPpeDetections(detections, 100, persons, 100);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].hasHelmet).toBe(true);
+    expect(groups[0].missing).not.toContain('Safety Shoes');
+    expect(groups[0].missing).not.toContain('Safety Vest');
+    expect(groups[0].missing).toHaveLength(0);
+  });
+
+  it('still requires a detected item even if body reach is low', () => {
+    const detections = [
+      { label: 'Safety Vest', score: 0.8, box: { x: 45, y: 5, width: 10, height: 10 } },
+    ];
+    const persons = [{ score: 0.95, box: { x: 20, y: 0, width: 60, height: 25 } }];
+
+    const groups = groupPpeDetections(detections, 100, persons, 100);
+    // Vest detected -> vest required and satisfied; helmet still required + missing.
+    expect(groups[0].hasVest).toBe(true);
+    expect(groups[0].missing).toContain('Safety Helmet');
   });
 });
 

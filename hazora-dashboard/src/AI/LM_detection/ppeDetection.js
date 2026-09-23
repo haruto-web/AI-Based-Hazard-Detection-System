@@ -251,21 +251,69 @@ function pointInBox(point, box) {
   );
 }
 
+// Fraction of box A that overlaps box B (intersection / area of A). Used to
+// attribute a PPE box to a person even when their edges don't perfectly align.
+function overlapRatio(a, b) {
+  const left = Math.max(a.x, b.x);
+  const top = Math.max(a.y, b.y);
+  const right = Math.min(a.x + a.width, b.x + b.width);
+  const bottom = Math.min(a.y + a.height, b.y + b.height);
+  const intersection = Math.max(0, right - left) * Math.max(0, bottom - top);
+  const areaA = a.width * a.height;
+  return areaA > 0 ? intersection / areaA : 0;
+}
+
+// Adaptive requirement: decide which PPE items to evaluate based on how far
+// down the frame the person's body reaches. Avoids flagging "missing shoes"
+// when the feet aren't even visible. An item is always required if it was
+// actually detected. Returns { helmet, vest, shoes }.
+function inferRequiredPpe(bottomReach, labels) {
+  return {
+    helmet: true, // head is essentially always in view when a person is detected
+    vest: labels.has('Safety Vest') || bottomReach >= 0.55,
+    shoes: labels.has('Safety Shoes') || bottomReach >= 0.85,
+  };
+}
+
+function buildGroup(ownedDetections, bottomReach) {
+  const labels = new Set(ownedDetections.map((detection) => detection.label));
+  const required = inferRequiredPpe(bottomReach, labels);
+
+  const hasHelmet = labels.has('Safety Helmet');
+  const hasVest = labels.has('Safety Vest');
+  const hasShoes = labels.has('Safety Shoes');
+
+  const missing = [];
+  if (required.helmet && !hasHelmet) missing.push('Safety Helmet');
+  if (required.vest && !hasVest) missing.push('Safety Vest');
+  if (required.shoes && !hasShoes) missing.push('Safety Shoes');
+
+  return {
+    detections: ownedDetections,
+    hasHelmet,
+    hasVest,
+    hasShoes,
+    required,
+    missing,
+  };
+}
+
 // Group PPE detections by the person that contains them. When no person model
 // output is available, fall back to spatial clustering by horizontal position.
-export function groupPpeDetections(detections, canvasWidth, persons = []) {
+// `canvasHeight` enables adaptive visibility (only require shoes/vest when the
+// relevant body region is actually in frame).
+export function groupPpeDetections(detections, canvasWidth, persons = [], canvasHeight = 0) {
   if (persons.length > 0) {
     return persons.map((person) => {
-      const owned = detections.filter((detection) => pointInBox(boxCenter(detection.box), person.box));
-      const labels = new Set(owned.map((detection) => detection.label));
-      return {
-        person,
-        detections: owned,
-        hasHelmet: labels.has('Safety Helmet'),
-        hasVest: labels.has('Safety Vest'),
-        hasShoes: labels.has('Safety Shoes'),
-        missing: PPE_LABELS.filter((label) => !labels.has(label)),
-      };
+      // Overlap-based attribution is more forgiving than center-in-box, so
+      // present PPE isn't dropped when boxes are tight or partially framed.
+      const owned = detections.filter((detection) => (
+        overlapRatio(detection.box, person.box) >= 0.3 ||
+        pointInBox(boxCenter(detection.box), person.box)
+      ));
+      const personBottom = person.box.y + person.box.height;
+      const bottomReach = canvasHeight > 0 ? personBottom / canvasHeight : 1;
+      return { person, ...buildGroup(owned, bottomReach) };
     });
   }
 
@@ -284,14 +332,13 @@ export function groupPpeDetections(detections, canvasWidth, persons = []) {
   });
 
   return groups.map((group) => {
-    const labels = new Set(group.detections.map((detection) => detection.label));
-    return {
-      detections: group.detections,
-      hasHelmet: labels.has('Safety Helmet'),
-      hasVest: labels.has('Safety Vest'),
-      hasShoes: labels.has('Safety Shoes'),
-      missing: PPE_LABELS.filter((label) => !labels.has(label)),
-    };
+    // Without a person box, estimate reach from the lowest detection.
+    const lowest = group.detections.reduce(
+      (max, d) => Math.max(max, d.box.y + d.box.height),
+      0
+    );
+    const bottomReach = canvasHeight > 0 ? lowest / canvasHeight : 1;
+    return buildGroup(group.detections, bottomReach);
   });
 }
 

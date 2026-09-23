@@ -15,7 +15,9 @@ import {
 import { buildHazardReport } from '../AI/LM_detection/hazardDetails';
 
 const VIOLATION_COOLDOWN_MS = 30000;
-const PPE_FRAMES_TO_REPORT = 3;
+// A violation must persist across this many consecutive frames before it
+// alerts, so a single-frame model miss (flicker) doesn't fire a false alarm.
+const PPE_FRAMES_TO_REPORT = 5;
 
 export function buildStreamUrl(value) {
   if (!value) return '';
@@ -134,8 +136,9 @@ export function useDetection(cameraIP, isConnected) {
       ]);
 
       // One group per detected person (falls back to spatial clustering when
-      // no person model output is available).
-      const groups = groupPpeDetections(ppeObjects, canvas.width, persons);
+      // no person model output is available). canvas.height enables adaptive
+      // visibility so shoes/vest aren't flagged when out of frame.
+      const groups = groupPpeDetections(ppeObjects, canvas.width, persons, canvas.height);
       persons.forEach((person) => drawPersonResult(ctx, person));
       ppeObjects.forEach((detection) => drawPpeResult(ctx, detection));
 
@@ -148,12 +151,14 @@ export function useDetection(cameraIP, isConnected) {
         ? ppeObjects.reduce((sum, item) => sum + item.score, 0) / ppeObjects.length
         : 0;
 
-      // Per-person evaluation: a group is a violation if it is missing anything.
+      // Per-person evaluation: a group is a violation if it is missing anything
+      // that is actually required (i.e. the body region is in frame).
       const violationGroups = groups.filter((group) => group.missing.length > 0);
       const compliantGroups = groups.filter((group) => group.missing.length === 0);
-      const noHelmets = groups.filter((group) => !group.hasHelmet).length;
-      const noVests = groups.filter((group) => !group.hasVest).length;
-      const noShoes = groups.filter((group) => !group.hasShoes).length;
+      // Only count a missing item when that item was required for that person.
+      const noHelmets = groups.filter((group) => group.missing.includes('Safety Helmet')).length;
+      const noVests = groups.filter((group) => group.missing.includes('Safety Vest')).length;
+      const noShoes = groups.filter((group) => group.missing.includes('Safety Shoes')).length;
       const personCount = persons.length || groups.length;
 
       setStatus(
