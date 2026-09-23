@@ -899,7 +899,7 @@ void loop() {
   unsigned long now = millis();
   if (now - lastWifiCheck >= WIFI_RECONNECT_INTERVAL) {
     lastWifiCheck = now;
-    checkWiFiConnection();
+    checkWiFiConnection(); 
 
     // Log health stats every check interval
     Serial.printf("[HEALTH] Heap: %u bytes | RSSI: %d dBm | Clients: %d | Frames: %lu\n",
