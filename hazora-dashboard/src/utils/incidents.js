@@ -29,12 +29,83 @@ export function getIncidents() {
   return readStoredIncidents();
 }
 
+// Convert a raw Firestore timestamp (Firebase Timestamp, ISO string, or
+// serverTimestamp placeholder) into an ISO string.
+function toIsoTimestamp(value) {
+  if (!value) return null;
+  if (typeof value === 'string') return value;
+  if (typeof value.toDate === 'function') {
+    try {
+      return value.toDate().toISOString();
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+// Normalize an incident from EITHER the website's own schema OR the mobile
+// app's schema so the dashboard, reports, and gallery read consistent fields.
+// App fields: location, confidence, prevention, capitalized status, timestamp.
+// Website fields: site, detectionConfidence, precautions, lowercase status.
 export function normalizeIncident(incident) {
-  const timestamp = incident.timestamp || incident.createdAt?.toDate?.()?.toISOString() || new Date().toISOString();
+  const timestamp =
+    toIsoTimestamp(incident.timestamp) ||
+    toIsoTimestamp(incident.createdAt) ||
+    new Date().toISOString();
+
   const hazardType = incident.hazardType || 'Unknown hazard';
-  const severity = ['low', 'medium', 'high', 'critical'].includes(incident.severity)
-    ? incident.severity
+
+  const severity = ['low', 'medium', 'high', 'critical'].includes(String(incident.severity).toLowerCase())
+    ? String(incident.severity).toLowerCase()
     : 'medium';
+
+  // Map both status conventions to the website's lowercase set.
+  const statusMap = { new: 'open', open: 'open', acknowledged: 'acknowledged', resolved: 'resolved', done: 'resolved' };
+  const status = statusMap[String(incident.status || 'open').toLowerCase()] || 'open';
+
+  // Confidence: app stores "confidence" (0..1 or 0..100), website stores
+  // "detectionConfidence" (0..1). Normalize everything to 0..1.
+  let confidence = Number(incident.detectionConfidence);
+  if (!Number.isFinite(confidence) || confidence === 0) {
+    confidence = Number(incident.confidence) || 0;
+  }
+  if (confidence > 1) confidence = confidence / 100;
+
+  // Site: website uses "site", app uses "location".
+  const site = incident.site || incident.location || '';
+
+  // Recommended action: website uses "precautions", app uses "prevention".
+  const precautions = incident.precautions || incident.prevention || '';
+
+  // App incidents don't carry per-item PPE counts; derive them from the hazard
+  // type so the PPE-breakdown/compliance charts still populate. e.g. a
+  // "Missing Safety Helmet" incident counts as 1 missing helmet.
+  const hazardLc = hazardType.toLowerCase();
+  const hasExplicitCounts =
+    incident.helmets != null || incident.noHelmets != null ||
+    incident.vests != null || incident.noVests != null ||
+    incident.shoes != null || incident.noShoes != null;
+
+  let helmets = Number(incident.helmets) || 0;
+  let noHelmets = Number(incident.noHelmets) || 0;
+  let vests = Number(incident.vests) || 0;
+  let noVests = Number(incident.noVests) || 0;
+  let shoes = Number(incident.shoes) || 0;
+  let noShoes = Number(incident.noShoes) || 0;
+
+  if (!hasExplicitCounts) {
+    const missing = hazardLc.includes('no ') || hazardLc.includes('missing') || hazardLc.includes('without');
+    if (hazardLc.includes('helmet') || hazardLc.includes('hard hat')) {
+      if (missing) noHelmets = 1; else helmets = 1;
+    }
+    if (hazardLc.includes('vest')) {
+      if (missing) noVests = 1; else vests = 1;
+    }
+    if (hazardLc.includes('shoe') || hazardLc.includes('boot')) {
+      if (missing) noShoes = 1; else shoes = 1;
+    }
+  }
 
   return {
     ...incident,
@@ -44,20 +115,22 @@ export function normalizeIncident(incident) {
     hazardType,
     hazardCode: incident.hazardCode || hazardType.toLowerCase().replace(/[^a-z0-9]+/g, '_'),
     description: incident.description || `${hazardType} detected at ${incident.cameraSource || 'unknown camera'}.`,
-    precautions: incident.precautions || '',
+    precautions,
     severity,
-    status: incident.status || 'open',
-    detectionConfidence: Number(incident.detectionConfidence) || 0,
-    detectedWorkers: Number(incident.detectedWorkers) || 0,
-    helmets: Number(incident.helmets) || 0,
-    noHelmets: Number(incident.noHelmets) || 0,
-    vests: Number(incident.vests) || 0,
-    noVests: Number(incident.noVests) || 0,
-    shoes: Number(incident.shoes) || 0,
-    noShoes: Number(incident.noShoes) || 0,
+    status,
+    detectionConfidence: confidence,
+    // A single app detection represents at least one worker observed.
+    detectedWorkers: Number(incident.detectedWorkers) || (incident.hazardType ? 1 : 0),
+    helmets,
+    noHelmets,
+    vests,
+    noVests,
+    shoes,
+    noShoes,
     compliant: Number(incident.compliant) || 0,
     imageData: incident.imageData || '',
-    site: incident.site || '',
+    faceData: incident.faceData || '',
+    site,
   };
 }
 
@@ -81,6 +154,7 @@ export async function createIncidentReport({
   noShoes = 0,
   compliant = 0,
   imageData = '',
+  faceData = '',
   site = '',
 }) {
   const now = new Date();
@@ -107,21 +181,35 @@ export async function createIncidentReport({
     noShoes,
     compliant,
     imageData,
+    faceData,
     site,
   });
 
   const incidents = [incident, ...readStoredIncidents()].slice(0, 500);
   writeStoredIncidents(incidents);
 
-  if (userId) {
-    try {
-      await addDoc(collection(db, 'users', userId, 'incidents'), {
-        ...incident,
-        createdAt: serverTimestamp(),
-      });
-    } catch (err) {
-      console.warn('Failed to save incident to Firestore:', err.message);
-    }
+  // Write to the shared top-level "incidents" collection so the website's
+  // live-stream captures land in the same place the mobile app writes to, and
+  // both platforms see one unified incident feed.
+  // Also emit the mobile app's field names/conventions so app screens render
+  // website-generated incidents correctly (shared collection, one feed).
+  const appStatus = { open: 'New', acknowledged: 'Acknowledged', resolved: 'Resolved' }[incident.status] || 'New';
+
+  try {
+    await addDoc(collection(db, 'incidents'), {
+      ...incident,
+      userId: userId || incident.userId || null,
+      // App-compatible aliases.
+      status: appStatus,
+      location: incident.site || '',
+      prevention: incident.precautions || '',
+      confidence: incident.detectionConfidence || 0,
+      // Store the app-compatible timestamp too so ordering works across both.
+      timestamp: serverTimestamp(),
+      createdAt: serverTimestamp(),
+    });
+  } catch (err) {
+    console.warn('Failed to save incident to Firestore:', err.message);
   }
 
   return incident;
@@ -138,25 +226,40 @@ export async function updateIncidentStatus(userId, incidentId, status) {
   );
   writeStoredIncidents(incidents);
 
-  if (userId) {
-    try {
-      const { doc, updateDoc } = await import('firebase/firestore');
-      await updateDoc(doc(db, 'users', userId, 'incidents', incidentId), { status });
-    } catch (err) {
-      console.warn('Failed to update incident status in Firestore:', err.message);
-    }
+  // Write the mobile app's capitalized status convention so the app's incident
+  // list (which filters on "New"/"Acknowledged"/"Resolved") stays in sync.
+  const appStatus = { open: 'New', acknowledged: 'Acknowledged', resolved: 'Resolved' }[status] || 'New';
+
+  try {
+    const { doc, updateDoc } = await import('firebase/firestore');
+    await updateDoc(doc(db, 'incidents', incidentId), { status: appStatus });
+  } catch (err) {
+    console.warn('Failed to update incident status in Firestore:', err.message);
+  }
+}
+
+// Permanently delete an incident locally and from the shared Firestore
+// "incidents" collection.
+export async function deleteIncident(incidentId) {
+  if (!incidentId) return;
+
+  const incidents = readStoredIncidents().filter((incident) => incident.id !== incidentId);
+  writeStoredIncidents(incidents);
+
+  try {
+    const { doc, deleteDoc } = await import('firebase/firestore');
+    await deleteDoc(doc(db, 'incidents', incidentId));
+  } catch (err) {
+    console.warn('Failed to delete incident from Firestore:', err.message);
   }
 }
 
 export function subscribeToIncidents(userId, onIncidents) {
-  if (!userId) {
-    onIncidents(readStoredIncidents());
-    return () => {};
-  }
-
+  // Read from the shared top-level "incidents" collection (same place the
+  // mobile app writes). Ordered by "timestamp" since both platforms set it.
   const incidentsQuery = query(
-    collection(db, 'users', userId, 'incidents'),
-    orderBy('createdAt', 'desc'),
+    collection(db, 'incidents'),
+    orderBy('timestamp', 'desc'),
     limit(500)
   );
 

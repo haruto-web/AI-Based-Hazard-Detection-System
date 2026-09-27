@@ -1,11 +1,14 @@
 import * as tf from '@tensorflow/tfjs';
 import * as tflite from '@tensorflow/tfjs-tflite/dist/tf-tflite.es2017.js';
 import * as cocoSsd from '@tensorflow-models/coco-ssd';
+import * as blazeface from '@tensorflow-models/blazeface';
 
 export const PPE_MODEL_URL = '/models/ppe/yolov8n.tflite';
 export const PPE_LABELS = ['Safety Helmet', 'Safety Vest', 'Safety Shoes'];
 export const PPE_INPUT_SIZE = 640;
-export const PPE_CONFIDENCE_THRESHOLD = 0.40;
+// Raised from 0.40 to cut false positives (e.g. a "vest" drawn where there is
+// none). Uncertain/weak boxes below this confidence are discarded.
+export const PPE_CONFIDENCE_THRESHOLD = 0.55;
 export const PPE_IOU_THRESHOLD = 0.45;
 const TFLITE_WASM_PATH = '/tflite/';
 
@@ -64,11 +67,86 @@ export async function loadPpeDetectionModels() {
 
   const personModel = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
 
+  // Face detector for evidence face-crops on violations. Non-fatal if it fails
+  // to load (detection still works, just without face crops).
+  let faceModel = null;
+  try {
+    faceModel = await blazeface.load();
+  } catch (err) {
+    console.warn('Face model failed to load; face capture disabled:', err?.message);
+  }
+
   return {
     ppeModel,
     personModel,
+    faceModel,
     ppeLabels: PPE_LABELS,
   };
+}
+
+// Detect faces in the current canvas. Returns boxes in canvas pixel space.
+export async function detectFaces({ faceModel, canvas }) {
+  if (!faceModel || !canvas) return [];
+  try {
+    const predictions = await faceModel.estimateFaces(canvas, false);
+    return predictions.map((p) => {
+      const [x1, y1] = p.topLeft;
+      const [x2, y2] = p.bottomRight;
+      return {
+        score: Array.isArray(p.probability) ? p.probability[0] : (p.probability || 0),
+        box: { x: x1, y: y1, width: x2 - x1, height: y2 - y1 },
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+
+// Crop the face that best falls within a person's box into a small JPEG data
+// URL for evidence. Returns '' when no suitable face is found.
+export function cropFaceForPerson(sourceCanvas, personBox, faces) {
+  if (!sourceCanvas || !personBox || !faces?.length) return '';
+
+  // Prefer a face whose center is inside the person's (head-region) box.
+  const headRegion = {
+    x: personBox.x,
+    y: personBox.y - personBox.height * 0.15,
+    width: personBox.width,
+    height: personBox.height * 0.6,
+  };
+
+  let chosen = null;
+  let bestScore = 0;
+  faces.forEach((face) => {
+    const center = { x: face.box.x + face.box.width / 2, y: face.box.y + face.box.height / 2 };
+    const inside = center.x >= headRegion.x && center.x <= headRegion.x + headRegion.width &&
+      center.y >= headRegion.y && center.y <= headRegion.y + headRegion.height;
+    if (inside && face.score >= bestScore) {
+      bestScore = face.score;
+      chosen = face;
+    }
+  });
+
+  if (!chosen) return '';
+
+  // Pad the crop a little so the whole face/head is captured.
+  const pad = chosen.box.width * 0.3;
+  const cx = Math.max(0, chosen.box.x - pad);
+  const cy = Math.max(0, chosen.box.y - pad);
+  const cw = Math.min(sourceCanvas.width - cx, chosen.box.width + pad * 2);
+  const ch = Math.min(sourceCanvas.height - cy, chosen.box.height + pad * 2);
+  if (cw <= 0 || ch <= 0) return '';
+
+  try {
+    const faceCanvas = document.createElement('canvas');
+    faceCanvas.width = Math.round(cw);
+    faceCanvas.height = Math.round(ch);
+    const fctx = faceCanvas.getContext('2d');
+    fctx.drawImage(sourceCanvas, cx, cy, cw, ch, 0, 0, faceCanvas.width, faceCanvas.height);
+    return faceCanvas.toDataURL('image/jpeg', 0.7);
+  } catch {
+    return '';
+  }
 }
 
 function iou(a, b) {
@@ -351,6 +429,79 @@ export function groupPpeDetections(detections, canvasWidth, persons = [], canvas
     const bottomReach = canvasHeight > 0 ? lowest / canvasHeight : 1;
     return buildGroup(group.detections, bottomReach);
   });
+}
+
+// ---------------------------------------------------------------------------
+// Lightweight person tracker (IoU-based) so we can alert ONCE per person per
+// missing item instead of re-firing every cooldown while the same person
+// stands in frame. This is the anti-spam solution: identity by position/overlap
+// across frames, not face recognition.
+// ---------------------------------------------------------------------------
+export function createPersonTracker({ iouMatchThreshold = 0.3, maxMissingFrames = 8 } = {}) {
+  let nextId = 1;
+  // tracks: [{ id, box, missing (frames unseen), alerted: Set<item> }]
+  let tracks = [];
+
+  return {
+    // Match this frame's person boxes to existing tracks; return each group
+    // augmented with a stable trackId.
+    assign(groups) {
+      const usedTrackIndexes = new Set();
+
+      const result = groups.map((group) => {
+        const box = group.person?.box;
+        if (!box) return { ...group, trackId: null };
+
+        let bestIndex = -1;
+        let bestIou = iouMatchThreshold;
+        tracks.forEach((track, index) => {
+          if (usedTrackIndexes.has(index)) return;
+          const overlap = iou(track.box, box);
+          if (overlap >= bestIou) {
+            bestIou = overlap;
+            bestIndex = index;
+          }
+        });
+
+        let track;
+        if (bestIndex >= 0) {
+          track = tracks[bestIndex];
+          track.box = box;
+          track.missing = 0;
+          usedTrackIndexes.add(bestIndex);
+        } else {
+          track = { id: nextId++, box, missing: 0, alerted: new Set() };
+          tracks.push(track);
+          usedTrackIndexes.add(tracks.length - 1);
+        }
+
+        return { ...group, trackId: track.id, _track: track };
+      });
+
+      // Age out tracks not matched this frame; drop the long-gone ones so a
+      // person who leaves and returns later is treated as new (re-alertable).
+      tracks.forEach((track, index) => {
+        if (!usedTrackIndexes.has(index)) track.missing += 1;
+      });
+      tracks = tracks.filter((track) => track.missing <= maxMissingFrames);
+
+      return result;
+    },
+
+    // Has this person already been alerted for this missing item?
+    hasAlerted(track, item) {
+      return track && track.alerted.has(item);
+    },
+
+    markAlerted(track, item) {
+      if (track) track.alerted.add(item);
+    },
+
+    reset() {
+      tracks = [];
+      nextId = 1;
+    },
+  };
 }
 
 export function drawPpeResult(ctx, detection) {

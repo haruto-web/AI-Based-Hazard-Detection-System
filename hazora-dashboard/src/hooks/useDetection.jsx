@@ -4,20 +4,25 @@ import { useNotifications } from '../context/NotificationContext';
 import { useAuth } from '../context/AuthContext';
 import {
   buildCaptureUrl,
+  createPersonTracker,
+  cropFaceForPerson,
+  detectFaces,
   detectPersons,
   detectPpeObjects,
   drawPersonResult,
   drawPpeResult,
   groupPpeDetections,
   loadPpeDetectionModels,
-  PPE_LABELS,
 } from '../AI/LM_detection/ppeDetection';
 import { buildHazardReport } from '../AI/LM_detection/hazardDetails';
 
-const VIOLATION_COOLDOWN_MS = 30000;
 // A violation must persist across this many consecutive frames before it
 // alerts, so a single-frame model miss (flicker) doesn't fire a false alarm.
 const PPE_FRAMES_TO_REPORT = 5;
+// Safety-net re-alert window: even a continuously-present, already-alerted
+// person can re-alert at most once per this interval (prevents true silence
+// on a long-standing violation, without per-frame spam).
+const REALERT_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
 export function buildStreamUrl(value) {
   if (!value) return '';
@@ -50,15 +55,20 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
   const canvasRef = useRef(null);
   const timerRef = useRef(null);
   const inferenceInFlightRef = useRef(false);
-  // Per-missing-item tracking so each PPE type is confirmed and throttled
-  // independently. Keys: 'Safety Helmet' | 'Safety Vest' | 'Safety Shoes'.
-  const lastAlertByItemRef = useRef({});
-  const confirmFramesByItemRef = useRef({});
+  // Tracks people across frames so each person alerts once per missing item
+  // (no per-frame flooding). Keyed alert timestamps live on each track.
+  const trackerRef = useRef(null);
+  if (!trackerRef.current) trackerRef.current = createPersonTracker();
+  // Per-track, per-item confirmation-frame counter: `${trackId}:${item}` -> n.
+  const confirmFramesRef = useRef({});
+  // Per-track, per-item last-alert time for the 5-min re-alert safety net.
+  const lastAlertRef = useRef({});
   const { addNotification } = useNotifications();
   const { user } = useAuth();
   const userId = user?.uid;
   const [ppeModel, setPpeModel] = useState(null);
   const [personModel, setPersonModel] = useState(null);
+  const [faceModel, setFaceModel] = useState(null);
   const [loading, setLoading] = useState(false);
   const [detecting, setDetecting] = useState(false);
   const [error, setError] = useState(null);
@@ -89,6 +99,7 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
         const models = await loadPpeDetectionModels();
         setPpeModel(models.ppeModel);
         setPersonModel(models.personModel);
+        setFaceModel(models.faceModel);
         return models;
       } catch (err) {
         console.error('Failed to load detection models:', err);
@@ -130,15 +141,25 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
       canvas.height = image.naturalHeight;
       ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
 
-      const [ppeObjects, persons] = await Promise.all([
+      // Keep a clean (un-annotated) copy of this frame for face crops, since
+      // the main canvas will get detection boxes drawn over it below.
+      const rawCanvas = document.createElement('canvas');
+      rawCanvas.width = canvas.width;
+      rawCanvas.height = canvas.height;
+      rawCanvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
+
+      const [ppeObjects, persons, faces] = await Promise.all([
         detectPpeObjects({ ppeModel, canvas }),
         personModel ? detectPersons({ personModel, canvas }) : Promise.resolve([]),
+        faceModel ? detectFaces({ faceModel, canvas }) : Promise.resolve([]),
       ]);
 
       // One group per detected person (falls back to spatial clustering when
       // no person model output is available). canvas.height enables adaptive
       // visibility so shoes/vest aren't flagged when out of frame.
-      const groups = groupPpeDetections(ppeObjects, canvas.width, persons, canvas.height);
+      const rawGroups = groupPpeDetections(ppeObjects, canvas.width, persons, canvas.height);
+      // Attach a stable trackId to each person so alerts are per-person.
+      const groups = trackerRef.current.assign(rawGroups);
       persons.forEach((person) => drawPersonResult(ctx, person));
       ppeObjects.forEach((detection) => drawPpeResult(ctx, detection));
 
@@ -176,81 +197,103 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
         violations: violationGroups.length,
       });
 
-      // Count, per missing item type, how many people are missing it this frame.
-      const missingCountByItem = {};
-      violationGroups.forEach((group) => {
+      const now = Date.now();
+      const tracker = trackerRef.current;
+      const siteForIncident = siteLocation && siteLocation.trim()
+        ? siteLocation.trim()
+        : 'Site location not set';
+
+      // Lazily capture the annotated frame only once per frame if any alert fires.
+      let cachedImageData = null;
+      const captureFrame = () => {
+        if (cachedImageData === null) {
+          try {
+            cachedImageData = canvas.toDataURL('image/jpeg', 0.6);
+          } catch {
+            cachedImageData = '';
+          }
+        }
+        return cachedImageData;
+      };
+
+      // Evaluate EACH PERSON separately. A person alerts once per missing item;
+      // it only re-alerts after REALERT_INTERVAL_MS or if they left and returned
+      // (a returning person gets a fresh track, so alerted state is cleared).
+      groups.forEach((group) => {
+        const track = group._track;
+        if (!track || group.missing.length === 0) return;
+
         group.missing.forEach((item) => {
-          missingCountByItem[item] = (missingCountByItem[item] || 0) + 1;
+          const key = `${track.id}:${item}`;
+
+          // Require the violation to persist a few frames before alerting.
+          confirmFramesRef.current[key] = (confirmFramesRef.current[key] || 0) + 1;
+          if (confirmFramesRef.current[key] < PPE_FRAMES_TO_REPORT) return;
+
+          const lastAlert = lastAlertRef.current[key] || 0;
+          const alreadyAlerted = tracker.hasAlerted(track, item);
+          const withinRealertWindow = now - lastAlert < REALERT_INTERVAL_MS;
+
+          // Skip if this person was already alerted for this item recently.
+          if (alreadyAlerted && withinRealertWindow) return;
+
+          tracker.markAlerted(track, item);
+          lastAlertRef.current[key] = now;
+
+          // Crop the violator's face from the clean frame for evidence (not
+          // identification). Empty string if no face is confidently found.
+          const faceData = group.person
+            ? cropFaceForPerson(rawCanvas, group.person.box, faces)
+            : '';
+
+          const report = buildHazardReport({
+            item,
+            affectedCount: 1,
+            personCount,
+            compliantCount: compliantGroups.length,
+            cameraSource: cameraIP,
+          });
+
+          addNotification({
+            violationType: report.hazardType,
+            cameraSource: cameraIP,
+            message: report.notificationMessage,
+            severity: report.severity,
+          });
+          createIncidentReport({
+            userId,
+            hazardType: report.hazardType,
+            description: report.description,
+            precautions: report.precautions,
+            cameraSource: cameraIP,
+            severity: report.severity,
+            detectionConfidence: avgConfidence,
+            model: 'YOLOv8n PPE',
+            detectedWorkers: personCount,
+            compliant: compliantGroups.length,
+            helmets,
+            noHelmets: item === 'Safety Helmet' ? 1 : 0,
+            vests,
+            noVests: item === 'Safety Vest' ? 1 : 0,
+            shoes,
+            noShoes: item === 'Safety Shoes' ? 1 : 0,
+            imageData: captureFrame(),
+            faceData,
+            site: siteForIncident,
+          });
         });
       });
 
-      const now = Date.now();
-      // Evaluate each PPE item type independently so each gets its own
-      // confirmation window, cooldown, notification, and incident report.
-      PPE_LABELS.forEach((item) => {
-        const affectedCount = missingCountByItem[item] || 0;
-
-        if (affectedCount > 0) {
-          confirmFramesByItemRef.current[item] = (confirmFramesByItemRef.current[item] || 0) + 1;
-
-          const confirmed = confirmFramesByItemRef.current[item] >= PPE_FRAMES_TO_REPORT;
-          const lastAlert = lastAlertByItemRef.current[item] || 0;
-          const cooledDown = now - lastAlert > VIOLATION_COOLDOWN_MS;
-
-          if (confirmed && cooledDown) {
-            lastAlertByItemRef.current[item] = now;
-
-            const report = buildHazardReport({
-              item,
-              affectedCount,
-              personCount,
-              compliantCount: compliantGroups.length,
-              cameraSource: cameraIP,
-            });
-
-            // Auto-capture the annotated frame (with detection boxes) as a
-            // JPEG for the gallery. Compressed to keep storage light.
-            let imageData = '';
-            try {
-              imageData = canvas.toDataURL('image/jpeg', 0.6);
-            } catch {
-              imageData = '';
-            }
-            const siteForIncident = siteLocation && siteLocation.trim()
-              ? siteLocation.trim()
-              : 'Site location not set';
-
-            addNotification({
-              violationType: report.hazardType,
-              cameraSource: cameraIP,
-              message: report.notificationMessage,
-              severity: report.severity,
-            });
-            createIncidentReport({
-              userId,
-              hazardType: report.hazardType,
-              description: report.description,
-              precautions: report.precautions,
-              cameraSource: cameraIP,
-              severity: report.severity,
-              detectionConfidence: avgConfidence,
-              model: 'YOLOv8n PPE',
-              detectedWorkers: personCount,
-              compliant: compliantGroups.length,
-              helmets,
-              noHelmets: item === 'Safety Helmet' ? affectedCount : 0,
-              vests,
-              noVests: item === 'Safety Vest' ? affectedCount : 0,
-              shoes,
-              noShoes: item === 'Safety Shoes' ? affectedCount : 0,
-              imageData,
-              site: siteForIncident,
-            });
-          }
-        } else {
-          // Item satisfied (or nobody missing it) this frame — reset its streak.
-          confirmFramesByItemRef.current[item] = 0;
+      // Reset confirmation streaks for tracks/items no longer violating so a
+      // brief flicker doesn't accumulate toward an alert.
+      const activeKeys = new Set();
+      groups.forEach((group) => {
+        if (group._track) {
+          group.missing.forEach((item) => activeKeys.add(`${group._track.id}:${item}`));
         }
+      });
+      Object.keys(confirmFramesRef.current).forEach((key) => {
+        if (!activeKeys.has(key)) confirmFramesRef.current[key] = 0;
       });
     } catch (err) {
       console.warn('PPE detection frame error:', err.message);
@@ -258,7 +301,7 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
     } finally {
       inferenceInFlightRef.current = false;
     }
-  }, [ppeModel, personModel, cameraIP, addNotification, userId, siteLocation]);
+  }, [ppeModel, personModel, faceModel, cameraIP, addNotification, userId, siteLocation]);
 
   useEffect(() => {
     if (detecting && ppeModel && isConnected && cameraIP) {
@@ -294,6 +337,10 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
       setDetecting(false);
       setStatus('');
       if (timerRef.current) clearInterval(timerRef.current);
+      // Clear tracking state so a fresh session starts clean.
+      trackerRef.current.reset();
+      confirmFramesRef.current = {};
+      lastAlertRef.current = {};
       return;
     }
 

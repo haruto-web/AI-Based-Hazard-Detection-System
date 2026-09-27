@@ -5,18 +5,10 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   build: {
-    rollupOptions: {
-      output: {
-        manualChunks(id) {
-          if (id.includes('node_modules')) {
-            if (id.includes('firebase')) return 'firebase-vendor';
-            if (id.includes('react-router-dom')) return 'router-vendor';
-            if (id.includes('react')) return 'react-vendor';
-            return 'vendor';
-          }
-        },
-      },
-    },
+    // Let the bundler decide chunk boundaries. Custom manualChunks with the
+    // rolldown bundler produced a broken chunk (missing module init function,
+    // "init_... is not defined") that crashed the lazily-loaded Dashboard.
+    chunkSizeWarningLimit: 4000,
   },
   test: {
     environment: 'jsdom',
