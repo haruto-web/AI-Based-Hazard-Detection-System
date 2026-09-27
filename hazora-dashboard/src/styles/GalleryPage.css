@@ -74,15 +74,26 @@
 
 .gallery-card-image {
   position: relative;
+  width: 100%;
+  height: 200px; /* fixed so portrait phone photos match landscape web captures */
   aspect-ratio: 4 / 3;
   background: #0f172a;
+  overflow: hidden;
 }
 
 .gallery-card-image img {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: cover; /* crop any aspect ratio to fill the fixed box uniformly */
   display: block;
+}
+
+/* The face-crop thumbnail must NOT be stretched to fill the card image box. */
+.gallery-card-image img.gallery-card-face {
+  position: absolute;
+  inset: auto;
 }
 
 .gallery-card-severity {
