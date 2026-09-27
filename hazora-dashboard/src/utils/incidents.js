@@ -29,6 +29,21 @@ export function getIncidents() {
   return readStoredIncidents();
 }
 
+// Normalize a stored image into a valid <img>-usable data URL.
+// - Website stores a full data URL ("data:image/jpeg;base64,...").
+// - Mobile app stores RAW base64 from Base64.encodeToString(..., DEFAULT),
+//   which has no "data:" prefix AND inserts newlines every 76 chars — both of
+//   which break an <img src>. Strip whitespace and add the prefix if missing.
+function toImageDataUrl(value) {
+  if (!value || typeof value !== 'string') return '';
+  const trimmed = value.trim();
+  if (trimmed.startsWith('data:')) return trimmed;
+  // Remove line breaks/whitespace the Android Base64 encoder adds.
+  const clean = trimmed.replace(/\s/g, '');
+  if (!clean) return '';
+  return `data:image/jpeg;base64,${clean}`;
+}
+
 // Convert a raw Firestore timestamp (Firebase Timestamp, ISO string, or
 // serverTimestamp placeholder) into an ISO string.
 function toIsoTimestamp(value) {
@@ -128,8 +143,8 @@ export function normalizeIncident(incident) {
     shoes,
     noShoes,
     compliant: Number(incident.compliant) || 0,
-    imageData: incident.imageData || '',
-    faceData: incident.faceData || '',
+    imageData: toImageDataUrl(incident.imageData),
+    faceData: toImageDataUrl(incident.faceData),
     site,
   };
 }
