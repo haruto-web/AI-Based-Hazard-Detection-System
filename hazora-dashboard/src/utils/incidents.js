@@ -56,6 +56,8 @@ export function normalizeIncident(incident) {
     shoes: Number(incident.shoes) || 0,
     noShoes: Number(incident.noShoes) || 0,
     compliant: Number(incident.compliant) || 0,
+    imageData: incident.imageData || '',
+    site: incident.site || '',
   };
 }
 
@@ -78,6 +80,8 @@ export async function createIncidentReport({
   shoes = 0,
   noShoes = 0,
   compliant = 0,
+  imageData = '',
+  site = '',
 }) {
   const now = new Date();
   const incident = normalizeIncident({
@@ -102,6 +106,8 @@ export async function createIncidentReport({
     shoes,
     noShoes,
     compliant,
+    imageData,
+    site,
   });
 
   const incidents = [incident, ...readStoredIncidents()].slice(0, 500);

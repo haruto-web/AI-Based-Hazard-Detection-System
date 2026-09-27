@@ -18,6 +18,7 @@ export const ROLE_ACCESS = {
   'Site Safety Officer': {
     dashboard: 'view',
     streams: 'full',
+    gallery: 'full',
     reports: 'view',
     accounts: 'none',
     messages: 'none',
@@ -27,6 +28,7 @@ export const ROLE_ACCESS = {
   'Site Safety Practitioner': {
     dashboard: 'view',
     streams: 'full',
+    gallery: 'full',
     reports: 'view',
     accounts: 'none',
     messages: 'none',
@@ -36,6 +38,7 @@ export const ROLE_ACCESS = {
   'Site Project Engineer': {
     dashboard: 'view',
     streams: 'view',
+    gallery: 'view',
     reports: 'none',
     accounts: 'none',
     messages: 'none',
@@ -45,6 +48,7 @@ export const ROLE_ACCESS = {
   'Site Construction Manager': {
     dashboard: 'full',
     streams: 'full',
+    gallery: 'full',
     reports: 'view',
     accounts: 'none',
     messages: 'none',
@@ -54,6 +58,7 @@ export const ROLE_ACCESS = {
   'Safety Engineer - Head Office': {
     dashboard: 'full',
     streams: 'full',
+    gallery: 'full',
     reports: 'full',
     accounts: 'none',
     messages: 'full',
@@ -63,6 +68,7 @@ export const ROLE_ACCESS = {
   'Safety Manager - Head Office': {
     dashboard: 'full',
     streams: 'full',
+    gallery: 'full',
     reports: 'full',
     accounts: 'none',
     messages: 'full',
@@ -72,6 +78,7 @@ export const ROLE_ACCESS = {
   'HSE Head - Head Office': {
     dashboard: 'full',
     streams: 'full',
+    gallery: 'full',
     reports: 'full',
     accounts: 'full',
     messages: 'full',
@@ -119,6 +126,7 @@ export function canSendMobileMessages(role) {
 const DEFAULT_ACCESS = {
   dashboard: 'full',
   streams: 'full',
+  gallery: 'full',
   reports: 'full',
   accounts: 'none',
   messages: 'none',

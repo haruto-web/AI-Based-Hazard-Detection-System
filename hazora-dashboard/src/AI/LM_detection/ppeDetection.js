@@ -5,7 +5,7 @@ import * as cocoSsd from '@tensorflow-models/coco-ssd';
 export const PPE_MODEL_URL = '/models/ppe/yolov8n.tflite';
 export const PPE_LABELS = ['Safety Helmet', 'Safety Vest', 'Safety Shoes'];
 export const PPE_INPUT_SIZE = 640;
-export const PPE_CONFIDENCE_THRESHOLD = 0.45;
+export const PPE_CONFIDENCE_THRESHOLD = 0.40;
 export const PPE_IOU_THRESHOLD = 0.45;
 const TFLITE_WASM_PATH = '/tflite/';
 
@@ -305,11 +305,22 @@ function buildGroup(ownedDetections, bottomReach) {
 export function groupPpeDetections(detections, canvasWidth, persons = [], canvasHeight = 0) {
   if (persons.length > 0) {
     return persons.map((person) => {
+      // Person boxes from coco-ssd often stop at the chin/shoulders, so a hard
+      // hat sitting on top of the head can fall just above the box and get
+      // dropped. Expand the region upward (and a little sideways) before
+      // attributing PPE so head-top helmets are captured.
+      const p = person.box;
+      const expanded = {
+        x: p.x - p.width * 0.1,
+        y: p.y - p.height * 0.2,
+        width: p.width * 1.2,
+        height: p.height * 1.25,
+      };
       // Overlap-based attribution is more forgiving than center-in-box, so
       // present PPE isn't dropped when boxes are tight or partially framed.
       const owned = detections.filter((detection) => (
-        overlapRatio(detection.box, person.box) >= 0.3 ||
-        pointInBox(boxCenter(detection.box), person.box)
+        overlapRatio(detection.box, expanded) >= 0.2 ||
+        pointInBox(boxCenter(detection.box), expanded)
       ));
       const personBottom = person.box.y + person.box.height;
       const bottomReach = canvasHeight > 0 ? personBottom / canvasHeight : 1;

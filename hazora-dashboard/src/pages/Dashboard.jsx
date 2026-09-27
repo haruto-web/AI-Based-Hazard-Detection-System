@@ -15,6 +15,7 @@ import Sidebar from '../components/Sidebar';
 import TopNavBar from '../components/TopNavBar';
 import AnalyticsDashboard from '../components/AnalyticsDashboard';
 import ReportsPage from '../components/ReportsPage';
+import GalleryPage from '../components/GalleryPage';
 import MessagesPage from '../components/MessagesPage';
 import MobileAccountsPage from '../components/MobileAccountsPage';
 import ProfilePage from '../components/ProfilePage';
@@ -39,8 +40,9 @@ export default function Dashboard() {
   } = useCameraSettings(user.uid);
 
   // Detection is owned here so the annotated canvas can overlay the main stream
-  // and the AI Detection panel can share the same state.
-  const detection = useDetection(cameraIP, connectedCount > 0);
+  // and the AI Detection panel can share the same state. The site location (if
+  // known) is stamped on auto-captured violation images for the gallery.
+  const detection = useDetection(cameraIP, connectedCount > 0, user?.site || '');
 
   function getCameraWebsite(camera) {
     if (!camera) return '';
@@ -160,6 +162,10 @@ export default function Dashboard() {
                   </Suspense>
                 </section>
               </div>
+            )}
+
+            {activeView === 'gallery' && canAccess(userRole, 'gallery') && (
+              <GalleryPage />
             )}
 
             {activeView === 'reports' && canAccess(userRole, 'reports') && (

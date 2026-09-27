@@ -4,6 +4,7 @@ import '../styles/Sidebar.css';
 const NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: 'grid' },
   { id: 'streams', label: 'Live Streams', icon: 'camera' },
+  { id: 'gallery', label: 'Gallery', icon: 'gallery' },
   { id: 'reports', label: 'Reports', icon: 'file' },
   { id: 'messages', label: 'Messages', icon: 'message' },
   { id: 'accounts', label: 'Mobile Accounts', icon: 'users' },
@@ -11,7 +12,7 @@ const NAV_ITEMS = [
   { id: 'profile', label: 'Profile', icon: 'user' },
 ];
 
-const VALID_VIEWS = ['dashboard', 'streams', 'reports', 'messages', 'accounts', 'about', 'profile'];
+const VALID_VIEWS = ['dashboard', 'streams', 'gallery', 'reports', 'messages', 'accounts', 'about', 'profile'];
 
 function NavIcon({ type }) {
   switch (type) {
@@ -61,6 +62,14 @@ function NavIcon({ type }) {
           <circle cx="9" cy="7" r="4" />
           <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
           <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+        </svg>
+      );
+    case 'gallery':
+      return (
+        <svg viewBox="0 0 24 24">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+          <circle cx="8.5" cy="8.5" r="1.5" />
+          <polyline points="21 15 16 10 5 21" />
         </svg>
       );
     case 'info':

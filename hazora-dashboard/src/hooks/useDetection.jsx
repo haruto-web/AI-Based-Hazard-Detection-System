@@ -46,7 +46,7 @@ function loadCaptureFrame(captureUrl) {
   });
 }
 
-export function useDetection(cameraIP, isConnected) {
+export function useDetection(cameraIP, isConnected, siteLocation = '') {
   const canvasRef = useRef(null);
   const timerRef = useRef(null);
   const inferenceInFlightRef = useRef(false);
@@ -208,6 +208,18 @@ export function useDetection(cameraIP, isConnected) {
               cameraSource: cameraIP,
             });
 
+            // Auto-capture the annotated frame (with detection boxes) as a
+            // JPEG for the gallery. Compressed to keep storage light.
+            let imageData = '';
+            try {
+              imageData = canvas.toDataURL('image/jpeg', 0.6);
+            } catch {
+              imageData = '';
+            }
+            const siteForIncident = siteLocation && siteLocation.trim()
+              ? siteLocation.trim()
+              : 'Site location not set';
+
             addNotification({
               violationType: report.hazardType,
               cameraSource: cameraIP,
@@ -231,6 +243,8 @@ export function useDetection(cameraIP, isConnected) {
               noVests: item === 'Safety Vest' ? affectedCount : 0,
               shoes,
               noShoes: item === 'Safety Shoes' ? affectedCount : 0,
+              imageData,
+              site: siteForIncident,
             });
           }
         } else {
@@ -244,7 +258,7 @@ export function useDetection(cameraIP, isConnected) {
     } finally {
       inferenceInFlightRef.current = false;
     }
-  }, [ppeModel, personModel, cameraIP, addNotification, userId]);
+  }, [ppeModel, personModel, cameraIP, addNotification, userId, siteLocation]);
 
   useEffect(() => {
     if (detecting && ppeModel && isConnected && cameraIP) {
