@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react';
-import { addDoc, collection, deleteField, doc, getDocs, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { addDoc, collection, deleteField, doc, getDocs, orderBy, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
 import { createUserWithEmailAndPassword, getAuth, sendEmailVerification, signOut as signOutFirebase } from 'firebase/auth';
 import { deleteApp, initializeApp } from 'firebase/app';
-import { httpsCallable } from 'firebase/functions';
-import { db, firebaseConfig, functions } from '../firebase';
+import { db, firebaseConfig } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { canManageMobileAccounts } from '../config/roles';
 import { sanitizeInput } from '../utils/security';
@@ -26,7 +25,6 @@ export default function MobileAccountsPage({ userRole }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null);
-  const [temporaryPassword, setTemporaryPassword] = useState('');
 
   const allowed = canManageMobileAccounts(userRole);
 
@@ -104,30 +102,38 @@ export default function MobileAccountsPage({ userRole }) {
     }
 
     setSaving(true);
-    setTemporaryPassword('');
     let provisionApp;
     let provisionedUser;
     try {
-      const linkExistingAccount = httpsCallable(functions, 'linkExistingMobileAccount');
-      const linkResult = await linkExistingAccount({
-        name: cleanName,
-        username: cleanUsername,
-        email: cleanEmail,
-        site: cleanSite,
+      const endpoint = import.meta.env.VITE_HAZARD_EMAIL_ENDPOINT?.trim();
+      if (!endpoint) throw new Error('The Apps Script account-link endpoint is not configured.');
+
+      const idToken = await user.getIdToken();
+      await fetch(endpoint, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'link_mobile_account',
+          idToken,
+          name: cleanName,
+          username: cleanUsername,
+          email: cleanEmail,
+          site: cleanSite,
+        }),
       });
 
-      if (linkResult.data.exists) {
+      const linkedSnapshot = await getDocs(query(
+        collection(db, 'mobile_accounts'),
+        where('email', '==', cleanEmail),
+      ));
+      const linkedDocument = linkedSnapshot.docs.find((item) => item.data().authUid);
+
+      if (linkedDocument) {
+        const linkedData = linkedDocument.data();
         const linkedAccount = {
-          id: linkResult.data.accountId,
-          name: linkResult.data.name,
-          role: linkResult.data.role,
-          username: linkResult.data.username,
-          usernameLowercase: linkResult.data.username.toLowerCase(),
-          email: linkResult.data.email,
-          authUid: linkResult.data.authUid,
-          site: linkResult.data.site,
-          status: 'active',
-          createdAt: new Date(),
+          id: linkedDocument.id,
+          ...linkedData,
         };
         setAccounts((prev) => [
           linkedAccount,
@@ -135,10 +141,12 @@ export default function MobileAccountsPage({ userRole }) {
         ]);
         setForm(initialForm);
         setMessage({
-          type: linkResult.data.emailVerified ? 'success' : 'error',
-          text: linkResult.data.emailVerified
-            ? 'Existing Firebase account linked. The user signs in to the app with the same email and password as the website; their verified email remains verified.'
-            : 'Existing Firebase account linked, but its email is not verified yet. The user must verify it before signing in to the app.',
+          type: linkedData.emailVerified ? 'success' : 'error',
+          text: linkedData.emailVerified
+            ? linkedData.passwordSetupEmailSent
+              ? 'Existing account linked. A password reset email was sent. The user opens the app, enters this email, and selects Forgot Password to set their password.'
+              : 'Existing account linked. The user can open the app, enter this email, and select Forgot Password to set their password. Check Firebase Auth email settings if no reset email arrives.'
+            : 'Existing account linked, but the email is not verified. Have the user verify it from their website profile first; then they can open the app and select Forgot Password to set their password.',
         });
         return;
       }
@@ -194,12 +202,11 @@ export default function MobileAccountsPage({ userRole }) {
         return [nextAccount, ...withoutLinkedAccount];
       });
       setForm(initialForm);
-      setTemporaryPassword(tempPassword);
       setMessage({
         type: verificationSent ? 'success' : 'error',
         text: verificationSent
-          ? `${existingAccount ? 'Existing mobile record linked' : 'Firebase login created'}. Give the user the temporary password below; they must verify their email before signing in.`
-          : 'Firebase login and mobile record were created, but the verification email could not be sent. Use Firebase Console to resend it.',
+          ? 'Mobile account created and verification email sent. The user should verify their email, open the app, enter this email, and select Forgot Password to set their password.'
+          : 'Mobile account created, but the verification email could not be sent. After resolving email delivery, the user must verify first, then use Forgot Password in the app to set their password.',
       });
     } catch (err) {
       if (provisionedUser) {
@@ -210,8 +217,12 @@ export default function MobileAccountsPage({ userRole }) {
         }
       }
       console.warn('Failed to save mobile account:', err.message);
-      const errorText = err.code === 'auth/email-already-in-use'
-        ? 'A Firebase Auth account already exists for this email. Use a different email or link the existing account.'
+      const errorCode = String(err.code || '').toLowerCase();
+      const errorMessage = String(err.message || '').toLowerCase();
+      const errorText = errorCode === 'auth/email-already-in-use'
+        ? 'This email already has a Firebase account, but linking did not complete. Deploy the latest Apps Script endpoint and dashboard, then try again. Do not create a second account or use another email.'
+        : errorCode === 'functions/internal' || errorMessage === 'internal'
+          ? 'The account-link service returned an internal error. Confirm the latest Apps Script version is deployed and check its execution log.'
         : err.code === 'permission-denied'
           ? 'Your account is not authorized to create mobile accounts. Sign in as the HSE Head administrator.'
           : err.message || 'Failed to create mobile account. Please try again.';
@@ -246,21 +257,11 @@ export default function MobileAccountsPage({ userRole }) {
         <div className="mobile-accounts-header">
           <div>
             <h2>Mobile Device Accounts</h2>
-            <p>Link an existing Firebase account or create a new login with its mobile profile. New users must verify their email before signing in.</p>
+            <p>Link an existing Firebase account or create a new mobile profile. New users verify their email first, then use Forgot Password in the app to set their password.</p>
           </div>
         </div>
 
-        {message && (
-          <div className={`mobile-message ${message.type}`}>
-            {message.text}
-            {temporaryPassword && (
-              <div className="mobile-temporary-password">
-                <strong>Temporary password (shown once)</strong>
-                <code>{temporaryPassword}</code>
-              </div>
-            )}
-          </div>
-        )}
+        {message && <div className={`mobile-message ${message.type}`}>{message.text}</div>}
 
         <form className="mobile-account-form" onSubmit={handleSubmit}>
           <div className="mobile-form-grid">
