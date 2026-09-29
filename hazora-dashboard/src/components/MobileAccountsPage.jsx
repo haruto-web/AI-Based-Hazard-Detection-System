@@ -12,7 +12,7 @@ const initialForm = {
   name: '',
   role: MOBILE_ROLE,
   username: '',
-  password: '',
+  email: '',
   site: '',
 };
 
@@ -64,6 +64,7 @@ export default function MobileAccountsPage({ userRole }) {
 
     const cleanName = sanitizeInput(form.name.trim());
     const cleanUsername = sanitizeInput(form.username.trim());
+    const cleanEmail = form.email.trim().toLowerCase();
     const cleanRole = sanitizeInput(form.role.trim());
     const cleanSite = sanitizeInput(form.site.trim());
 
@@ -77,8 +78,8 @@ export default function MobileAccountsPage({ userRole }) {
       return;
     }
 
-    if (form.password.length < 6) {
-      setMessage({ type: 'error', text: 'Password must be at least 6 characters.' });
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      setMessage({ type: 'error', text: 'Enter the email used by the Firebase Authentication account.' });
       return;
     }
 
@@ -98,7 +99,7 @@ export default function MobileAccountsPage({ userRole }) {
         name: cleanName,
         role: cleanRole,
         username: cleanUsername,
-        password: form.password,
+        email: cleanEmail,
         site: cleanSite,
         status: 'active',
         createdBy: user.uid,
@@ -109,7 +110,7 @@ export default function MobileAccountsPage({ userRole }) {
       const docRef = await addDoc(collection(db, 'mobile_accounts'), accountData);
       setAccounts((prev) => [{ id: docRef.id, ...accountData, createdAt: new Date() }, ...prev]);
       setForm(initialForm);
-      setMessage({ type: 'success', text: 'Mobile account saved. You can give these credentials to the mobile user.' });
+      setMessage({ type: 'success', text: 'Mobile account saved. Create the matching Firebase Authentication user and send its email verification link in Firebase Console.' });
     } catch (err) {
       console.warn('Failed to save mobile account:', err.message);
       setMessage({ type: 'error', text: 'Failed to save mobile account. Please try again.' });
@@ -135,7 +136,7 @@ export default function MobileAccountsPage({ userRole }) {
         <div className="mobile-accounts-header">
           <div>
             <h2>Mobile Device Accounts</h2>
-            <p>Create login credentials for mobile users.</p>
+            <p>Link each mobile record to a Firebase Auth email. Create the matching Auth user separately in Firebase Console; the user verifies their email on first sign-in.</p>
           </div>
         </div>
 
@@ -183,13 +184,13 @@ export default function MobileAccountsPage({ userRole }) {
             </div>
 
             <div className="mobile-field">
-              <label htmlFor="mobile-password">Password</label>
+              <label htmlFor="mobile-email">Firebase Auth Email</label>
               <input
-                id="mobile-password"
-                type="text"
-                value={form.password}
-                onChange={(e) => handleChange('password', e.target.value)}
-                placeholder="Temporary password"
+                id="mobile-email"
+                type="email"
+                value={form.email}
+                onChange={(e) => handleChange('email', e.target.value)}
+                placeholder="officer@example.com"
                 disabled={saving}
               />
             </div>
@@ -235,8 +236,8 @@ export default function MobileAccountsPage({ userRole }) {
                   <code>{account.username}</code>
                 </div>
                 <div>
-                  <span className="mobile-credential-label">Password</span>
-                  <code>{account.password}</code>
+                  <span className="mobile-credential-label">Firebase Auth email</span>
+                  <code>{account.email || 'Not linked yet'}</code>
                 </div>
               </article>
             ))}
