@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { addDoc, collection, getDocs, orderBy, query, serverTimestamp } from 'firebase/firestore';
+import { addDoc, collection, doc, getDocs, onSnapshot, orderBy, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { canSendMobileMessages } from '../config/roles';
+import { messageMatchesEmail, normalizeMessageRecipient } from '../utils/messageRecipients';
 import { sanitizeInput } from '../utils/security';
 import '../styles/MessagesPage.css';
 
@@ -29,15 +30,75 @@ export default function MessagesPage({ userRole }) {
   const [accounts, setAccounts] = useState([]);
   const [selectedAccount, setSelectedAccount] = useState(null);
   const [messages, setMessages] = useState([]);
+  const [inboxMessages, setInboxMessages] = useState([]);
+  const [inboxLoading, setInboxLoading] = useState(true);
   const [loading, setLoading] = useState(true);
   const [contactsLoading, setContactsLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [notice, setNotice] = useState(null);
 
-  const allowed = canSendMobileMessages(userRole);
+  const canSend = canSendMobileMessages(userRole);
 
   useEffect(() => {
-    if (!allowed) {
+    const email = normalizeMessageRecipient(user?.email);
+    if (!email) return undefined;
+
+    let normalizedDocs = [];
+    let legacyDocs = [];
+    let normalizedLoaded = false;
+    let legacyLoaded = false;
+
+    function publishInbox() {
+      const uniqueMessages = new Map();
+      [...normalizedDocs, ...legacyDocs].forEach((item) => {
+        const message = { id: item.id, ...item.data() };
+        if (messageMatchesEmail(message, email)) uniqueMessages.set(message.id, message);
+      });
+
+      setInboxMessages(Array.from(uniqueMessages.values()).sort((a, b) => {
+        const aTime = a.createdAt?.toMillis?.() || new Date(a.createdAt || a.timestamp || 0).getTime();
+        const bTime = b.createdAt?.toMillis?.() || new Date(b.createdAt || b.timestamp || 0).getTime();
+        return bTime - aTime;
+      }));
+      if (normalizedLoaded && legacyLoaded) setInboxLoading(false);
+    }
+
+    const messagesRef = collection(db, 'messages');
+    const stopNormalized = onSnapshot(
+      query(messagesRef, where('recipientSearch', '==', email)),
+      (snapshot) => {
+        normalizedDocs = snapshot.docs;
+        normalizedLoaded = true;
+        publishInbox();
+      },
+      (error) => {
+        console.warn('Inbox listener error:', error.message);
+        normalizedLoaded = true;
+        setInboxLoading(false);
+      },
+    );
+    const stopLegacy = onSnapshot(
+      query(messagesRef, where('recipient', '==', user.email)),
+      (snapshot) => {
+        legacyDocs = snapshot.docs;
+        legacyLoaded = true;
+        publishInbox();
+      },
+      (error) => {
+        console.warn('Legacy inbox listener error:', error.message);
+        legacyLoaded = true;
+        setInboxLoading(false);
+      },
+    );
+
+    return () => {
+      stopNormalized();
+      stopLegacy();
+    };
+  }, [user?.email]);
+
+  useEffect(() => {
+    if (!canSend) {
       return undefined;
     }
 
@@ -66,7 +127,7 @@ export default function MessagesPage({ userRole }) {
 
     loadMessages();
     return undefined;
-  }, [allowed]);
+  }, [canSend]);
 
   function handleChange(field, value) {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -128,6 +189,19 @@ export default function MessagesPage({ userRole }) {
     }
   }
 
+  async function markInboxMessageRead(message) {
+    if (message.unread === false || message.status === 'read') return;
+    try {
+      await updateDoc(doc(db, 'messages', message.id), {
+        unread: false,
+        status: 'read',
+        readAt: serverTimestamp(),
+      });
+    } catch (error) {
+      console.warn('Failed to mark inbox message as read:', error.message);
+    }
+  }
+
   const visibleMessages = selectedAccount
     ? messages.filter((item) => {
         const recipient = (item.recipient || '').toLowerCase();
@@ -137,19 +211,51 @@ export default function MessagesPage({ userRole }) {
       })
     : messages;
 
-  if (!allowed) {
-    return (
-      <div className="messages-page">
-        <section className="messages-panel">
-          <h2>Messages</h2>
-          <p className="messages-empty">Only head-office users can send messages to the mobile app.</p>
-        </section>
-      </div>
-    );
-  }
-
   return (
     <div className="messages-page">
+      <section className="messages-panel website-inbox">
+        <header className="message-history-header">
+          <div>
+            <h3>Inbox</h3>
+            <p>Messages sent to {user.email}</p>
+          </div>
+          <span>{inboxMessages.filter((item) => item.unread !== false && item.status !== 'read').length} unread</span>
+        </header>
+        {inboxLoading && user.email ? (
+          <p className="messages-empty">Loading inbox...</p>
+        ) : !user.email ? (
+          <p className="messages-empty">Your account has no email address for receiving messages.</p>
+        ) : inboxMessages.length === 0 ? (
+          <p className="messages-empty">No messages have been sent to your account.</p>
+        ) : (
+          <div className="website-inbox-list">
+            {inboxMessages.map((item) => {
+              const unread = item.unread !== false && item.status !== 'read';
+              const createdAt = item.createdAt?.toDate?.() || item.timestamp?.toDate?.() ||
+                (item.createdAt || item.timestamp ? new Date(item.createdAt || item.timestamp) : null);
+              return (
+                <article className={`website-inbox-message ${unread ? 'unread' : ''}`} key={item.id}>
+                  <div className="website-inbox-message-header">
+                    <div>
+                      <strong>{item.subject || 'Message'}</strong>
+                      <span>From {item.senderEmail || item.sender || 'HAZORA user'}</span>
+                    </div>
+                    <time>{createdAt && !Number.isNaN(createdAt.getTime()) ? createdAt.toLocaleString() : 'Just now'}</time>
+                  </div>
+                  <p>{item.message || item.body || item.preview || ''}</p>
+                  {unread && (
+                    <button type="button" onClick={() => markInboxMessageRead(item)}>
+                      Mark as read
+                    </button>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      {canSend && (
       <section className="messages-panel messenger-panel">
         <aside className="messenger-contacts">
           <div className="messenger-contacts-header">
@@ -266,6 +372,7 @@ export default function MessagesPage({ userRole }) {
           </form>
         </div>
       </section>
+      )}
     </div>
   );
 }

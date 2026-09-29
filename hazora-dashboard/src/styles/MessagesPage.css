@@ -300,6 +300,75 @@
   font-size: 0.78rem;
 }
 
+.website-inbox .message-history-header p {
+  margin: 0.3rem 0 0;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+}
+
+.website-inbox-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.website-inbox-message {
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.website-inbox-message:last-child {
+  border-bottom: 0;
+}
+
+.website-inbox-message.unread {
+  border-left: 3px solid var(--accent);
+  background: var(--accent-bg-hover);
+}
+
+.website-inbox-message-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.website-inbox-message-header > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.website-inbox-message-header strong {
+  color: var(--text-primary);
+  font-size: 0.92rem;
+}
+
+.website-inbox-message-header span,
+.website-inbox-message-header time {
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.website-inbox-message p {
+  margin: 0.75rem 0;
+  color: var(--text-primary);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.website-inbox-message > button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 .message-list {
   display: flex;
   flex-direction: column;
