@@ -117,6 +117,29 @@
   color: var(--error);
 }
 
+.mobile-temporary-password {
+  display: grid;
+  gap: 0.35rem;
+  margin-top: 0.65rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-card);
+}
+
+.mobile-temporary-password strong {
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.mobile-temporary-password code {
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  user-select: all;
+  overflow-wrap: anywhere;
+}
+
 .mobile-empty {
   margin: 0;
   padding: 1.5rem;

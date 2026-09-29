@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
-import { addDoc, collection, getDocs, orderBy, query, serverTimestamp } from 'firebase/firestore';
-import { db } from '../firebase';
+import { addDoc, collection, deleteField, doc, getDocs, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { createUserWithEmailAndPassword, getAuth, sendEmailVerification, signOut as signOutFirebase } from 'firebase/auth';
+import { deleteApp, initializeApp } from 'firebase/app';
+import { db, firebaseConfig } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { canManageMobileAccounts } from '../config/roles';
 import { sanitizeInput } from '../utils/security';
@@ -23,6 +25,7 @@ export default function MobileAccountsPage({ userRole }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null);
+  const [temporaryPassword, setTemporaryPassword] = useState('');
 
   const allowed = canManageMobileAccounts(userRole);
 
@@ -56,6 +59,12 @@ export default function MobileAccountsPage({ userRole }) {
 
   function handleChange(field, value) {
     setForm((prev) => ({ ...prev, [field]: value }));
+  }
+
+  function createTemporaryPassword() {
+    const bytes = new Uint8Array(24);
+    window.crypto.getRandomValues(bytes);
+    return Array.from(bytes, (byte) => (byte % 36).toString(36)).join('') + 'A7!';
   }
 
   async function handleSubmit(e) {
@@ -94,12 +103,22 @@ export default function MobileAccountsPage({ userRole }) {
     }
 
     setSaving(true);
+    setTemporaryPassword('');
+    let provisionApp;
+    let provisionedUser;
     try {
+      const tempPassword = createTemporaryPassword();
+      provisionApp = initializeApp(firebaseConfig, `mobile-provision-${Date.now()}`);
+      const provisionAuth = getAuth(provisionApp);
+      const credential = await createUserWithEmailAndPassword(provisionAuth, cleanEmail, tempPassword);
+      provisionedUser = credential.user;
+
       const accountData = {
         name: cleanName,
         role: cleanRole,
         username: cleanUsername,
         email: cleanEmail,
+        authUid: credential.user.uid,
         site: cleanSite,
         status: 'active',
         createdBy: user.uid,
@@ -107,14 +126,68 @@ export default function MobileAccountsPage({ userRole }) {
         createdAt: serverTimestamp(),
       };
 
-      const docRef = await addDoc(collection(db, 'mobile_accounts'), accountData);
-      setAccounts((prev) => [{ id: docRef.id, ...accountData, createdAt: new Date() }, ...prev]);
+      const existingAccount = accounts.find((account) =>
+        String(account.username || '').trim().toLowerCase() === cleanUsername.toLowerCase()
+      );
+      let accountId;
+      if (existingAccount) {
+        const profileUpdates = { ...accountData };
+        delete profileUpdates.createdAt;
+        await updateDoc(doc(db, 'mobile_accounts', existingAccount.id), {
+          ...profileUpdates,
+          password: deleteField(),
+          authLinkedAt: serverTimestamp(),
+        });
+        accountId = existingAccount.id;
+      } else {
+        const docRef = await addDoc(collection(db, 'mobile_accounts'), accountData);
+        accountId = docRef.id;
+      }
+      let verificationSent = true;
+      try {
+        await sendEmailVerification(credential.user);
+      } catch (verificationError) {
+        verificationSent = false;
+        console.warn('Mobile account verification email failed:', verificationError.message);
+      }
+
+      setAccounts((prev) => {
+        const nextAccount = { id: accountId, ...accountData, createdAt: new Date() };
+        const withoutLinkedAccount = prev.filter((account) => account.id !== accountId);
+        return [nextAccount, ...withoutLinkedAccount];
+      });
       setForm(initialForm);
-      setMessage({ type: 'success', text: 'Mobile account saved. Create the matching Firebase Authentication user and send its email verification link in Firebase Console.' });
+      setTemporaryPassword(tempPassword);
+      setMessage({
+        type: verificationSent ? 'success' : 'error',
+        text: verificationSent
+          ? `${existingAccount ? 'Existing mobile record linked' : 'Firebase login created'}. Give the user the temporary password below; they must verify their email before signing in.`
+          : 'Firebase login and mobile record were created, but the verification email could not be sent. Use Firebase Console to resend it.',
+      });
     } catch (err) {
+      if (provisionedUser) {
+        try {
+          await provisionedUser.delete();
+        } catch (cleanupError) {
+          console.warn('Could not roll back mobile Auth user:', cleanupError.message);
+        }
+      }
       console.warn('Failed to save mobile account:', err.message);
-      setMessage({ type: 'error', text: 'Failed to save mobile account. Please try again.' });
+      const errorText = err.code === 'auth/email-already-in-use'
+        ? 'A Firebase Auth account already exists for this email. Use a different email or link the existing account.'
+        : err.code === 'permission-denied'
+          ? 'Your account is not authorized to create mobile accounts. Sign in as the HSE Head administrator.'
+          : err.message || 'Failed to create mobile account. Please try again.';
+      setMessage({ type: 'error', text: errorText });
     } finally {
+      if (provisionApp) {
+        try {
+          await signOutFirebase(getAuth(provisionApp));
+          await deleteApp(provisionApp);
+        } catch (cleanupError) {
+          console.warn('Mobile provisioning session cleanup failed:', cleanupError.message);
+        }
+      }
       setSaving(false);
     }
   }
@@ -136,13 +209,19 @@ export default function MobileAccountsPage({ userRole }) {
         <div className="mobile-accounts-header">
           <div>
             <h2>Mobile Device Accounts</h2>
-            <p>Link each mobile record to a Firebase Auth email. Create the matching Auth user separately in Firebase Console; the user verifies their email on first sign-in.</p>
+            <p>Create a Firebase login and mobile profile together. Users must verify their email before signing in.</p>
           </div>
         </div>
 
         {message && (
           <div className={`mobile-message ${message.type}`}>
             {message.text}
+            {temporaryPassword && (
+              <div className="mobile-temporary-password">
+                <strong>Temporary password (shown once)</strong>
+                <code>{temporaryPassword}</code>
+              </div>
+            )}
           </div>
         )}
 
