@@ -74,7 +74,7 @@ export default function MobileAccountsPage({ userRole }) {
     const cleanName = sanitizeInput(form.name.trim());
     const cleanUsername = sanitizeInput(form.username.trim());
     const cleanEmail = form.email.trim().toLowerCase();
-    const cleanRole = sanitizeInput(form.role.trim());
+    const cleanRole = form.role.trim();
     const cleanSite = sanitizeInput(form.site.trim());
 
     if (cleanName.length < 3) {
