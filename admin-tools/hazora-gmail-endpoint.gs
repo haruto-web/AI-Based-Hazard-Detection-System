@@ -223,15 +223,16 @@ function linkMobileAccount(payload, caller, properties) {
   const existingAuthUser = findFirebaseAuthUserByEmail(projectId, email, accessToken);
   if (!existingAuthUser) return jsonResponse({ ok: true, exists: false });
 
-  const accountDocuments = listFirestoreDocuments(projectId, databaseId, 'mobile_accounts', accessToken);
   const usernameLowercase = username.toLowerCase();
-  const emailMatch = accountDocuments.find((document) =>
-    (document.fields?.email?.stringValue || '').trim().toLowerCase() === email
-  );
-  const usernameMatch = accountDocuments.find((document) =>
-    (document.fields?.usernameLowercase?.stringValue || document.fields?.username?.stringValue || '')
-      .trim().toLowerCase() === usernameLowercase
-  );
+  const emailMatch = queryFirestoreDocument(projectId, databaseId, 'mobile_accounts', 'email', email, accessToken);
+  const usernameMatch = queryFirestoreDocument(
+    projectId,
+    databaseId,
+    'mobile_accounts',
+    'usernameLowercase',
+    usernameLowercase,
+    accessToken,
+  ) || queryFirestoreDocument(projectId, databaseId, 'mobile_accounts', 'username', username, accessToken);
 
   if (usernameMatch && usernameMatch.name !== emailMatch?.name &&
       usernameMatch.fields?.authUid?.stringValue !== existingAuthUser.localId) {
@@ -347,27 +348,33 @@ function getFirestoreDocument(projectId, databaseId, path, accessToken) {
   return JSON.parse(response.getContentText());
 }
 
-function listFirestoreDocuments(projectId, databaseId, collectionPath, accessToken) {
-  const documents = [];
-  let pageToken = '';
-  do {
-    const query = [`pageSize=1000`, pageToken && `pageToken=${encodeURIComponent(pageToken)}`]
-      .filter(Boolean)
-      .join('&');
-    const url = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}` +
-      `/databases/${encodeURIComponent(databaseId)}/documents/${collectionPath}?${query}`;
-    const response = UrlFetchApp.fetch(url, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-      muteHttpExceptions: true,
-    });
-    if (response.getResponseCode() !== 200) {
-      throw new Error(`Could not list mobile accounts: ${response.getContentText()}`);
-    }
-    const page = JSON.parse(response.getContentText());
-    documents.push(...(page.documents || []));
-    pageToken = page.nextPageToken || '';
-  } while (pageToken);
-  return documents;
+function queryFirestoreDocument(projectId, databaseId, collectionId, fieldPath, value, accessToken) {
+  const url = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}` +
+    `/databases/${encodeURIComponent(databaseId)}/documents:runQuery`;
+  const response = UrlFetchApp.fetch(url, {
+    method: 'post',
+    contentType: 'application/json',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    payload: JSON.stringify({
+      structuredQuery: {
+        from: [{ collectionId }],
+        where: {
+          fieldFilter: {
+            field: { fieldPath },
+            op: 'EQUAL',
+            value: { stringValue: value },
+          },
+        },
+        limit: 1,
+      },
+    }),
+    muteHttpExceptions: true,
+  });
+  if (response.getResponseCode() !== 200) {
+    throw new Error(`Could not query mobile accounts: ${response.getContentText()}`);
+  }
+  const result = JSON.parse(response.getContentText());
+  return result.find((item) => item.document)?.document || null;
 }
 
 function createFirestoreDocument(projectId, databaseId, collectionPath, fields, accessToken) {

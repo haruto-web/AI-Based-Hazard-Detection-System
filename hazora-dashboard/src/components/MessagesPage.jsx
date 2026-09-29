@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { addDoc, collection, doc, getDocs, onSnapshot, orderBy, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
+import { addDoc, collection, doc, getDocs, limit, onSnapshot, orderBy, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { canSendMobileMessages } from '../config/roles';
@@ -106,7 +106,7 @@ export default function MessagesPage({ userRole }) {
       try {
         const [messagesSnapshot, accountsSnapshot] = await Promise.all([
           getDocs(query(collection(db, 'messages'), orderBy('createdAt', 'desc'))),
-          getDocs(query(collection(db, 'mobile_accounts'), orderBy('createdAt', 'desc'))),
+          getDocs(query(collection(db, 'mobile_accounts'), orderBy('createdAt', 'desc'), limit(50))),
         ]);
         setMessages(messagesSnapshot.docs.map((docSnap) => ({
           id: docSnap.id,

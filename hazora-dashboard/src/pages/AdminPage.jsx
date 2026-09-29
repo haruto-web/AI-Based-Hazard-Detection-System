@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { signOut } from 'firebase/auth';
-import { collection, deleteDoc, doc, onSnapshot, serverTimestamp, writeBatch } from 'firebase/firestore';
+import { collection, deleteDoc, doc, limit, onSnapshot, orderBy, query, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { auth, db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
@@ -69,7 +69,12 @@ export default function AdminPage() {
       finishInitialLoad();
     }, handleError);
 
-    const unsubscribeMobileAccounts = onSnapshot(collection(db, 'mobile_accounts'), (snapshot) => {
+    const mobileAccountsQuery = query(
+      collection(db, 'mobile_accounts'),
+      orderBy('createdAt', 'desc'),
+      limit(50),
+    );
+    const unsubscribeMobileAccounts = onSnapshot(mobileAccountsQuery, (snapshot) => {
       setMobileAccounts(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })));
       loadedMobileAccounts = true;
       finishInitialLoad();

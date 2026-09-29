@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { addDoc, collection, deleteField, doc, getDocs, orderBy, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
+import { addDoc, collection, deleteField, doc, getDocs, limit, orderBy, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
 import { createUserWithEmailAndPassword, getAuth, sendEmailVerification, signOut as signOutFirebase } from 'firebase/auth';
 import { deleteApp, initializeApp } from 'firebase/app';
 import { db, firebaseConfig } from '../firebase';
@@ -37,7 +37,8 @@ export default function MobileAccountsPage({ userRole }) {
       try {
         const accountQuery = query(
           collection(db, 'mobile_accounts'),
-          orderBy('createdAt', 'desc')
+          orderBy('createdAt', 'desc'),
+          limit(50),
         );
         const snapshot = await getDocs(accountQuery);
         setAccounts(snapshot.docs.map((docSnap) => ({
@@ -126,6 +127,7 @@ export default function MobileAccountsPage({ userRole }) {
       const linkedSnapshot = await getDocs(query(
         collection(db, 'mobile_accounts'),
         where('email', '==', cleanEmail),
+        limit(1),
       ));
       const linkedDocument = linkedSnapshot.docs.find((item) => item.data().authUid);
 
