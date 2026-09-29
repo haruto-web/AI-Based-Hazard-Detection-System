@@ -1,0 +1,187 @@
+.android-app-page {
+  width: min(100%, 980px);
+  margin: 0 auto;
+  padding: clamp(24px, 4vw, 48px);
+  color: var(--text-primary);
+}
+
+.android-app-heading {
+  margin-bottom: 28px;
+}
+
+.android-app-eyebrow {
+  margin: 0 0 8px;
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.android-app-heading h2 {
+  margin: 0;
+  font-size: 1.65rem;
+}
+
+.android-app-heading > p:last-child {
+  margin: 8px 0 0;
+  color: var(--text-secondary);
+}
+
+.android-app-content {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.9fr) minmax(280px, 1.1fr);
+  align-items: center;
+  gap: clamp(24px, 5vw, 56px);
+  padding: clamp(20px, 4vw, 40px);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-card);
+}
+
+.android-qr-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.android-qr-frame {
+  display: grid;
+  width: min(100%, 300px);
+  aspect-ratio: 1;
+  place-items: center;
+  padding: 18px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.android-qr-frame.has-qr img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.android-qr-placeholder {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 18px;
+  color: #243044;
+}
+
+.android-qr-symbol {
+  display: grid;
+  width: 64px;
+  aspect-ratio: 1;
+  place-items: center;
+  border: 2px solid #243044;
+  border-radius: 5px;
+  font-weight: 800;
+}
+
+.android-qr-placeholder strong {
+  font-size: 0.9rem;
+}
+
+.android-qr-placeholder span:last-child {
+  max-width: 210px;
+  color: #5a6575;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.android-qr-caption {
+  max-width: 320px;
+  margin: 14px 0 0;
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.android-download-panel {
+  max-width: 400px;
+}
+
+.android-download-icon {
+  display: grid;
+  width: 48px;
+  aspect-ratio: 1;
+  place-items: center;
+  margin-bottom: 18px;
+  border-radius: 8px;
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.android-download-icon svg {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.android-download-panel h3 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.android-download-panel p {
+  margin: 10px 0 22px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.android-download-button {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 18px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.android-download-button:hover:not(:disabled) {
+  background: var(--accent-hover);
+  color: #fff;
+}
+
+.android-download-button:disabled {
+  border-color: var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+@media (max-width: 760px) {
+  .android-app-content {
+    grid-template-columns: 1fr;
+    justify-items: center;
+  }
+
+  .android-download-panel {
+    width: 100%;
+    max-width: 420px;
+    text-align: center;
+  }
+
+  .android-download-icon {
+    margin-right: auto;
+    margin-left: auto;
+  }
+}

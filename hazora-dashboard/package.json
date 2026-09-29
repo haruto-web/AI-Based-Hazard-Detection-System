@@ -17,6 +17,7 @@
     "@tensorflow/tfjs-tflite": "^0.0.1-alpha.10",
     "firebase": "^12.13.0",
     "jspdf": "^4.2.1",
+    "qrcode": "^1.5.4",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "react-router-dom": "^7.15.1"

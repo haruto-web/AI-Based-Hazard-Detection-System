@@ -8,11 +8,12 @@ const NAV_ITEMS = [
   { id: 'reports', label: 'Reports', icon: 'file' },
   { id: 'messages', label: 'Messages', icon: 'message' },
   { id: 'accounts', label: 'Mobile Accounts', icon: 'users' },
+  { id: 'androidApp', label: 'Android App', icon: 'android' },
   { id: 'about', label: 'About', icon: 'info' },
   { id: 'profile', label: 'Profile', icon: 'user' },
 ];
 
-const VALID_VIEWS = ['dashboard', 'streams', 'gallery', 'reports', 'messages', 'accounts', 'about', 'profile'];
+const VALID_VIEWS = ['dashboard', 'streams', 'gallery', 'reports', 'messages', 'accounts', 'androidApp', 'about', 'profile'];
 
 function NavIcon({ type }) {
   switch (type) {
@@ -78,6 +79,14 @@ function NavIcon({ type }) {
           <circle cx="12" cy="12" r="10" />
           <line x1="12" y1="16" x2="12" y2="12" />
           <line x1="12" y1="8" x2="12.01" y2="8" />
+        </svg>
+      );
+    case 'android':
+      return (
+        <svg viewBox="0 0 24 24">
+          <rect x="6" y="2" width="12" height="20" rx="2" />
+          <line x1="10" y1="18" x2="14" y2="18" />
+          <line x1="9" y1="5" x2="15" y2="5" />
         </svg>
       );
     default:
