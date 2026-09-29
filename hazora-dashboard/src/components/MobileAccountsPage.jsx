@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { addDoc, collection, deleteField, doc, getDocs, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { createUserWithEmailAndPassword, getAuth, sendEmailVerification, signOut as signOutFirebase } from 'firebase/auth';
 import { deleteApp, initializeApp } from 'firebase/app';
-import { db, firebaseConfig } from '../firebase';
+import { httpsCallable } from 'firebase/functions';
+import { db, firebaseConfig, functions } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { canManageMobileAccounts } from '../config/roles';
 import { sanitizeInput } from '../utils/security';
@@ -107,6 +108,41 @@ export default function MobileAccountsPage({ userRole }) {
     let provisionApp;
     let provisionedUser;
     try {
+      const linkExistingAccount = httpsCallable(functions, 'linkExistingMobileAccount');
+      const linkResult = await linkExistingAccount({
+        name: cleanName,
+        username: cleanUsername,
+        email: cleanEmail,
+        site: cleanSite,
+      });
+
+      if (linkResult.data.exists) {
+        const linkedAccount = {
+          id: linkResult.data.accountId,
+          name: linkResult.data.name,
+          role: linkResult.data.role,
+          username: linkResult.data.username,
+          usernameLowercase: linkResult.data.username.toLowerCase(),
+          email: linkResult.data.email,
+          authUid: linkResult.data.authUid,
+          site: linkResult.data.site,
+          status: 'active',
+          createdAt: new Date(),
+        };
+        setAccounts((prev) => [
+          linkedAccount,
+          ...prev.filter((account) => account.id !== linkedAccount.id),
+        ]);
+        setForm(initialForm);
+        setMessage({
+          type: linkResult.data.emailVerified ? 'success' : 'error',
+          text: linkResult.data.emailVerified
+            ? 'Existing Firebase account linked. The user signs in to the app with the same email and password as the website; their verified email remains verified.'
+            : 'Existing Firebase account linked, but its email is not verified yet. The user must verify it before signing in to the app.',
+        });
+        return;
+      }
+
       const tempPassword = createTemporaryPassword();
       provisionApp = initializeApp(firebaseConfig, `mobile-provision-${Date.now()}`);
       const provisionAuth = getAuth(provisionApp);
@@ -117,6 +153,7 @@ export default function MobileAccountsPage({ userRole }) {
         name: cleanName,
         role: cleanRole,
         username: cleanUsername,
+        usernameLowercase: cleanUsername.toLowerCase(),
         email: cleanEmail,
         authUid: credential.user.uid,
         site: cleanSite,
@@ -209,7 +246,7 @@ export default function MobileAccountsPage({ userRole }) {
         <div className="mobile-accounts-header">
           <div>
             <h2>Mobile Device Accounts</h2>
-            <p>Create a Firebase login and mobile profile together. Users must verify their email before signing in.</p>
+            <p>Link an existing Firebase account or create a new login with its mobile profile. New users must verify their email before signing in.</p>
           </div>
         </div>
 
