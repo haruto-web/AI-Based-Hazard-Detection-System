@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { sendPasswordResetEmail } from 'firebase/auth';
+import { reload, sendEmailVerification, sendPasswordResetEmail } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
@@ -17,6 +17,8 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(false);
   const [resettingPassword, setResettingPassword] = useState(false);
+  const [emailVerified, setEmailVerified] = useState(user.emailVerified);
+  const [verificationSending, setVerificationSending] = useState(false);
   const [message, setMessage] = useState(null);
 
   // Load profile from Firestore
@@ -109,6 +111,26 @@ export default function ProfilePage() {
     }
   }
 
+  async function handleVerifyEmail() {
+    setMessage(null);
+    setVerificationSending(true);
+    try {
+      if (emailVerified) {
+        await reload(user);
+        setEmailVerified(user.emailVerified);
+        setMessage({ type: 'success', text: user.emailVerified ? 'Your email is verified.' : 'Email is not verified yet. Open the verification link from your inbox, then check again.' });
+      } else {
+        await sendEmailVerification(user);
+        setMessage({ type: 'success', text: 'Verification link sent. Check your inbox, then return here and check your status.' });
+      }
+    } catch (err) {
+      setMessage({ type: 'error', text: 'Could not verify your email right now. Please try again.' });
+      console.warn('Email verification error:', err.message);
+    } finally {
+      setVerificationSending(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="profile-page">
@@ -169,6 +191,18 @@ export default function ProfilePage() {
               className="field-readonly"
             />
             <span className="field-hint">Email cannot be changed</span>
+          </div>
+
+          <div className={`profile-email-verification ${emailVerified ? 'verified' : 'unverified'}`}>
+            <div>
+              <strong>{emailVerified ? 'Email verified' : 'Verify your email for hazard alerts'}</strong>
+              <p>{emailVerified
+                ? 'Hazard email notifications can be sent to this address.'
+                : 'Confirm this address to receive hazard email notifications. Check your inbox after requesting a link.'}</p>
+            </div>
+            <button type="button" onClick={handleVerifyEmail} disabled={verificationSending}>
+              {verificationSending ? 'Please wait…' : emailVerified ? 'Check status' : 'Send verification link'}
+            </button>
           </div>
 
           <div className="profile-field">

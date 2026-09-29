@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { createUserWithEmailAndPassword, sendPasswordResetEmail, signInWithEmailAndPassword } from 'firebase/auth';
+import { createUserWithEmailAndPassword, sendEmailVerification, sendPasswordResetEmail, signInWithEmailAndPassword } from 'firebase/auth';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { Link } from 'react-router-dom';
@@ -94,6 +94,12 @@ export default function AuthForm({ mode, onSuccess, onRegisterStarted, onLoginSt
           createdAt: serverTimestamp(),
           lastLogin: serverTimestamp(),
         });
+
+        try {
+          await sendEmailVerification(userCredential.user);
+        } catch (verificationError) {
+          console.warn('Could not send email verification:', verificationError.message);
+        }
         
         // Log successful registration
         await logUserLogin(userCredential.user.uid, email);

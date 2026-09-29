@@ -27,6 +27,23 @@
 .profile-field input:disabled,
 .profile-field select:disabled { background: var(--bg-input); color: var(--text-muted); cursor: default; }
 .profile-field input.field-readonly { background: var(--bg-input); color: var(--text-muted); }
+
+.profile-email-verification {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--warning);
+  border-radius: 6px;
+}
+
+.profile-email-verification.verified { border-left-color: var(--success); }
+.profile-email-verification strong { color: var(--text-primary); font-size: 0.88rem; }
+.profile-email-verification p { margin: 4px 0 0; color: var(--text-secondary); font-size: 0.82rem; }
+.profile-email-verification button { min-height: 38px; padding: 0 12px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg-secondary); color: var(--text-primary); font: inherit; font-size: 0.82rem; font-weight: 600; cursor: pointer; }
+.profile-email-verification button:disabled { opacity: 0.6; cursor: wait; }
 .field-hint { font-size: 0.72rem; color: var(--text-muted); }
 
 .profile-actions { display: flex; gap: 0.75rem; justify-content: flex-end; padding-top: 0.5rem; }
@@ -48,4 +65,5 @@
   .profile-form { padding: 1.5rem; }
   .profile-actions { flex-direction: column; }
   .profile-security { align-items: stretch; flex-direction: column; padding: 1.5rem; }
+  .profile-email-verification { align-items: stretch; flex-direction: column; }
 }

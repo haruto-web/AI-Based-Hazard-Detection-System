@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createIncidentReport } from '../utils/incidents';
+import { sendHazardEmail } from '../utils/hazardEmail';
 import { useNotifications } from '../context/NotificationContext';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -260,6 +261,13 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
             message: report.notificationMessage,
             severity: report.severity,
           });
+          sendHazardEmail({
+            user,
+            hazardType: report.hazardType,
+            site: siteForIncident,
+            cameraSource: cameraIP,
+            severity: report.severity,
+          });
           createIncidentReport({
             userId,
             hazardType: report.hazardType,
@@ -301,7 +309,7 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
     } finally {
       inferenceInFlightRef.current = false;
     }
-  }, [ppeModel, personModel, faceModel, cameraIP, addNotification, userId, siteLocation]);
+  }, [ppeModel, personModel, faceModel, cameraIP, addNotification, userId, user, siteLocation]);
 
   useEffect(() => {
     if (detecting && ppeModel && isConnected && cameraIP) {
