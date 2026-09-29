@@ -1,0 +1,12 @@
+{
+  "name": "hazora-admin-tools",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Local-only administrative utilities for Hazora Firebase",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "firebase-admin": "^14.5.0"
+  }
+}

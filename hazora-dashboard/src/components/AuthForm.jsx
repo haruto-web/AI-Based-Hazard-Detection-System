@@ -5,17 +5,15 @@ import { auth, db } from '../firebase';
 import { Link } from 'react-router-dom';
 import '../styles/AuthForm.css';
 
-import { ROLES } from '../config/roles';
 import { sanitizeInput, isValidEmail, isValidPhone, checkPasswordStrength } from '../utils/security';
 import { logUserLogin, logLoginFailed } from '../utils/auditLogger';
 
-export default function AuthForm({ mode, onSuccess }) {
+export default function AuthForm({ mode, onSuccess, onRegisterStarted, onLoginStarted }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
-  const [role, setRole] = useState('');
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [passwordStrength, setPasswordStrength] = useState(null);
@@ -60,11 +58,6 @@ export default function AuthForm({ mode, onSuccess }) {
         setError('Please enter a valid Philippine phone number.');
         return;
       }
-      if (!role) {
-        setError('Please select your role.');
-        return;
-      }
-      
       // Enhanced password validation
       const strengthCheck = checkPasswordStrength(password);
       if (password.length < 8) {
@@ -77,6 +70,8 @@ export default function AuthForm({ mode, onSuccess }) {
       }
     }
 
+    if (isRegister) onRegisterStarted?.();
+    else onLoginStarted?.();
     setLoading(true);
 
     try {
@@ -92,7 +87,8 @@ export default function AuthForm({ mode, onSuccess }) {
           fullName: sanitizedFullName,
           email: email.trim().toLowerCase(),
           phone: sanitizedPhone,
-          role: role,
+          role: null,
+          approvalStatus: 'pending',
           cameraIP: null,
           cameras: ['', '', '', '', ''],
           createdAt: serverTimestamp(),
@@ -107,7 +103,7 @@ export default function AuthForm({ mode, onSuccess }) {
         // Log successful login
         await logUserLogin(userCredential.user.uid, email);
       }
-      onSuccess?.();
+      await onSuccess?.(auth.currentUser);
     } catch (err) {
       const errorMessage = getErrorMessage(err.code);
       setError(errorMessage);
@@ -181,21 +177,6 @@ export default function AuthForm({ mode, onSuccess }) {
                 />
               </div>
 
-              <div className="form-group">
-                <label htmlFor="role">Role</label>
-                <select
-                  id="role"
-                  value={role}
-                  onChange={(e) => setRole(e.target.value)}
-                  disabled={loading}
-                  className="form-select"
-                >
-                  <option value="" disabled>Select your role</option>
-                  {ROLES.map((r) => (
-                    <option key={r} value={r}>{r}</option>
-                  ))}
-                </select>
-              </div>
             </>
           )}
 

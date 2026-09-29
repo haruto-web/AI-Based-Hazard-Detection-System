@@ -1,0 +1,339 @@
+.admin-page {
+  min-height: 100vh;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.admin-header {
+  min-height: 68px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 12px clamp(18px, 5vw, 72px);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
+}
+
+.admin-brand {
+  color: var(--text-primary);
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.admin-brand span {
+  margin-left: 8px;
+  color: var(--accent);
+  font-size: 0.7rem;
+}
+
+.admin-header-user {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+.admin-header-user button,
+.admin-refresh {
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.admin-main {
+  width: min(1120px, calc(100% - 40px));
+  margin: 0 auto;
+  padding: 42px 0 64px;
+}
+
+.admin-title-row,
+.admin-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.admin-eyebrow {
+  margin: 0 0 8px;
+  color: var(--accent);
+  font-size: 0.73rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+}
+
+.admin-title-row h1 {
+  margin: 0;
+  font-size: 2rem;
+}
+
+.admin-title-row p:last-child,
+.admin-section-heading p {
+  margin: 8px 0 0;
+  color: var(--text-secondary);
+}
+
+.admin-refresh:disabled,
+.admin-row-actions button:disabled,
+.admin-role-field select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.admin-tabs {
+  display: flex;
+  gap: 8px;
+  margin-top: 34px;
+  border-bottom: 1px solid var(--border);
+}
+
+.admin-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 46px;
+  padding: 0 14px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.admin-tabs button.active {
+  border-bottom-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.admin-tabs button span {
+  min-width: 22px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  text-align: center;
+}
+
+.admin-section {
+  padding-top: 26px;
+}
+
+.admin-section-heading h2 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.admin-empty {
+  padding: 28px 0;
+  color: var(--text-secondary);
+}
+
+.admin-message {
+  margin-top: 18px;
+  padding: 11px 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.admin-message.success {
+  border-color: color-mix(in srgb, var(--success) 45%, var(--border));
+  color: var(--success);
+}
+
+.admin-message.error {
+  border-color: color-mix(in srgb, var(--error) 45%, var(--border));
+  color: var(--error);
+}
+
+.admin-user-list,
+.admin-mobile-list,
+.admin-directory-list {
+  margin-top: 18px;
+  border-top: 1px solid var(--border);
+}
+
+.admin-user-row,
+.admin-mobile-row,
+.admin-directory-row {
+  display: grid;
+  align-items: center;
+  gap: 20px;
+  padding: 20px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.admin-user-row {
+  grid-template-columns: minmax(190px, 1.2fr) minmax(200px, 1fr) auto;
+}
+
+.admin-user-identity,
+.admin-role-field,
+.admin-mobile-row > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.admin-user-identity span,
+.admin-user-identity small,
+.admin-role-field > span,
+.admin-mobile-row > div > span {
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+}
+
+.admin-user-identity span,
+.admin-mobile-row strong {
+  overflow-wrap: anywhere;
+}
+
+.admin-role-field select {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.admin-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.admin-row-actions button {
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.admin-row-actions .admin-approve {
+  border-color: var(--success);
+  background: var(--success);
+  color: #fff;
+}
+
+.admin-row-actions .admin-delete {
+  color: var(--error);
+}
+
+.admin-mobile-row {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.admin-directory-row {
+  grid-template-columns: 1.2fr 1.5fr 1.5fr 0.9fr 1.2fr;
+}
+
+.admin-directory-row > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.admin-directory-row > div > span {
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+}
+
+.admin-directory-row strong {
+  overflow-wrap: anywhere;
+  font-size: 0.9rem;
+}
+
+@media (max-width: 900px) {
+  .admin-user-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .admin-row-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+
+  .admin-mobile-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-directory-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .admin-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .admin-header-user {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .admin-main {
+    width: min(100% - 28px, 1120px);
+    padding-top: 28px;
+  }
+
+  .admin-title-row {
+    align-items: flex-start;
+  }
+
+  .admin-title-row h1 {
+    font-size: 1.6rem;
+  }
+
+  .admin-user-row,
+  .admin-mobile-row,
+  .admin-directory-row {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-tabs button {
+    padding: 0 8px;
+    font-size: 0.9rem;
+  }
+}
+
+.admin-live-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.admin-live-status > span {
+  width: 8px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 16%, transparent);
+}

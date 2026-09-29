@@ -1,0 +1,93 @@
+.approval-status-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.approval-status-panel {
+  width: min(100%, 520px);
+  padding: 36px;
+  border: 1px solid var(--border);
+  border-top: 4px solid var(--accent);
+  border-radius: 8px;
+  background: var(--bg-card);
+  box-shadow: 0 16px 48px var(--shadow);
+}
+
+.approval-status-mark {
+  display: grid;
+  width: 42px;
+  aspect-ratio: 1;
+  place-items: center;
+  margin-bottom: 24px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.approval-status-eyebrow {
+  margin: 0 0 8px;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.approval-status-panel h1 {
+  margin: 0;
+  font-size: 1.7rem;
+  line-height: 1.2;
+}
+
+.approval-status-message {
+  margin: 16px 0 0;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.approval-status-email {
+  margin: 20px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.approval-status-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 28px;
+}
+
+.approval-status-actions button {
+  min-height: 42px;
+  padding: 0 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.approval-status-actions .approval-signout-button {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+@media (max-width: 480px) {
+  .approval-status-panel {
+    padding: 26px 22px;
+  }
+
+  .approval-status-panel h1 {
+    font-size: 1.4rem;
+  }
+}

@@ -21,6 +21,26 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'HSE Head - Head Office';
     }
 
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.admin == true;
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn() && request.auth.token.superAdmin == true;
+    }
+
+    function isValidUserRole(role) {
+      return role in [
+        'Site Safety Officer',
+        'Site Safety Practitioner',
+        'Site Project Engineer',
+        'Site Construction Manager',
+        'Safety Engineer - Head Office',
+        'Safety Manager - Head Office',
+        'HSE Head - Head Office'
+      ];
+    }
+
     // --- MOBILE APP COMPATIBLE RULES (No Firebase Auth Required) ---
 
     match /mobile_accounts/{accountId} {
@@ -55,12 +75,65 @@ service cloud.firestore {
     // --- WEBSITE / AUTHENTICATED ACCESS ---
 
     match /users/{userId} {
-      allow create: if isSignedIn() && request.auth.uid == userId;
-      allow read, update: if isSignedIn() && request.auth.uid == userId;
-      allow delete: if isHeadOffice();
+      allow create: if isSignedIn() && request.auth.uid == userId &&
+        request.resource.data.approvalStatus == 'pending' &&
+        request.resource.data.role == null;
+      allow read: if (isSignedIn() && request.auth.uid == userId) || isAdmin();
+      allow update: if isSignedIn() && request.auth.uid == userId &&
+        request.resource.data.role == resource.data.role &&
+        request.resource.data.approvalStatus == resource.data.approvalStatus &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'fullName', 'email', 'phone', 'cameraIP', 'cameras', 'lastLogin', 'site'
+        ]) || (
+          isAdmin() &&
+          resource.data.approvalStatus == 'pending' &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'approvalStatus', 'role', 'reviewedAt', 'reviewedBy'
+          ]) &&
+          request.resource.data.reviewedBy == request.auth.uid &&
+          request.resource.data.reviewedAt == request.time &&
+          (
+            (
+              request.resource.data.approvalStatus == 'approved' &&
+              isValidUserRole(request.resource.data.role) &&
+              (!(request.resource.data.role in [
+                'Safety Engineer - Head Office',
+                'Safety Manager - Head Office',
+                'HSE Head - Head Office'
+              ]) || isSuperAdmin())
+            ) || (
+              request.resource.data.approvalStatus == 'rejected' &&
+              request.resource.data.role == null
+            )
+          )
+        );
+      allow delete: if isAdmin() && resource.data.approvalStatus == 'pending';
 
       match /notifications/{notifId} {
-        allow read, write: if isSignedIn() && request.auth.uid == userId;
+        allow read, update, delete: if isSignedIn() && request.auth.uid == userId;
+        allow create: if (isSignedIn() && request.auth.uid == userId) || (
+          isAdmin() &&
+          request.resource.data.keys().hasOnly([
+            'type', 'violationType', 'cameraSource', 'role', 'read', 'timestamp'
+          ]) &&
+          request.resource.data.read == false &&
+          request.resource.data.timestamp == request.time &&
+          getAfter(/databases/$(database)/documents/users/$(userId)).data.reviewedBy == request.auth.uid &&
+          getAfter(/databases/$(database)/documents/users/$(userId)).data.reviewedAt == request.time &&
+          (
+            (
+              request.resource.data.type == 'account_approved' &&
+              getAfter(/databases/$(database)/documents/users/$(userId)).data.approvalStatus == 'approved' &&
+              request.resource.data.role == getAfter(/databases/$(database)/documents/users/$(userId)).data.role &&
+              isValidUserRole(request.resource.data.role)
+            ) || (
+              request.resource.data.type == 'account_rejected' &&
+              getAfter(/databases/$(database)/documents/users/$(userId)).data.approvalStatus == 'rejected' &&
+              request.resource.data.role == null &&
+              getAfter(/databases/$(database)/documents/users/$(userId)).data.role == null
+            )
+          )
+        );
       }
 
       match /incidents/{incidentId} {

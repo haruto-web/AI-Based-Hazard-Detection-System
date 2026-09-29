@@ -1,0 +1,8 @@
+{
+  "firestore": [
+    {
+      "database": "hazora",
+      "rules": "firestore.rules"
+    }
+  ]
+}

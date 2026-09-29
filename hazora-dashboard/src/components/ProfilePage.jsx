@@ -3,7 +3,6 @@ import { sendPasswordResetEmail } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
-import { ROLES } from '../config/roles';
 import '../styles/ProfilePage.css';
 
 export default function ProfilePage() {
@@ -84,7 +83,6 @@ export default function ProfilePage() {
         fullName: profile.fullName.trim(),
         email: profile.email.trim(),
         phone: profile.phone.trim(),
-        role: profile.role,
       }, { merge: true });
 
       setMessage({ type: 'success', text: 'Profile updated successfully.' });
@@ -187,17 +185,12 @@ export default function ProfilePage() {
 
           <div className="profile-field">
             <label htmlFor="profile-role">Role</label>
-            <select
+            <input
               id="profile-role"
-              value={profile.role}
-              onChange={(e) => handleChange('role', e.target.value)}
-              disabled={!editing || saving}
-            >
-              <option value="" disabled>Select your role</option>
-              {ROLES.map((r) => (
-                <option key={r} value={r}>{r}</option>
-              ))}
-            </select>
+              value={profile.role || 'Pending admin assignment'}
+              disabled
+              className="field-readonly"
+            />
           </div>
 
           {editing && (
