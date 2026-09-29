@@ -23,7 +23,7 @@ const PPE_FRAMES_TO_REPORT = 5;
 // Safety-net re-alert window: even a continuously-present, already-alerted
 // person can re-alert at most once per this interval (prevents true silence
 // on a long-standing violation, without per-frame spam).
-const REALERT_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+const REALERT_INTERVAL_MS = 60 * 1000; // 1 minute
 
 export function buildStreamUrl(value) {
   if (!value) return '';

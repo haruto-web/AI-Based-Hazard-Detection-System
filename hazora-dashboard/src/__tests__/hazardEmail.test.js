@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { HAZARD_EMAIL_COOLDOWN_MS, isHazardEmailCooldownActive, sendHazardEmail } from '../utils/hazardEmail';
 
 describe('hazard email cooldown', () => {
+  it('uses a one-minute cooldown', () => {
+    expect(HAZARD_EMAIL_COOLDOWN_MS).toBe(60 * 1000);
+  });
+
   it('suppresses another alert inside the cooldown window', () => {
     const now = 1_000_000;
     expect(isHazardEmailCooldownActive(now - HAZARD_EMAIL_COOLDOWN_MS + 1, now)).toBe(true);

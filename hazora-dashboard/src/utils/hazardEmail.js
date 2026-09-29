@@ -1,6 +1,6 @@
 import { auth } from '../firebase';
 
-export const HAZARD_EMAIL_COOLDOWN_MS = 15 * 60 * 1000;
+export const HAZARD_EMAIL_COOLDOWN_MS = 60 * 1000;
 
 export function isHazardEmailCooldownActive(lastSentAt, now = Date.now()) {
   const timestamp = Number(lastSentAt);

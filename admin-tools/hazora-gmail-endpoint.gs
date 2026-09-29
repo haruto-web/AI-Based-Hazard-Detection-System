@@ -1,5 +1,15 @@
-// Configure Script Properties: FIREBASE_WEB_API_KEY and HAZORA_DASHBOARD_URL.
-const HAZARD_EMAIL_COOLDOWN_MS = 15 * 60 * 1000;
+// Configure Script Properties: FIREBASE_WEB_API_KEY, FIREBASE_PROJECT_ID,
+// FIRESTORE_DATABASE_ID, and HAZORA_DASHBOARD_URL.
+const HAZARD_EMAIL_COOLDOWN_MS = 60 * 1000;
+const HAZARD_EMAIL_ROLES = [
+  'Site Safety Officer',
+  'Site Safety Practitioner',
+  'Site Project Engineer',
+  'Site Construction Manager',
+  'Safety Engineer - Head Office',
+  'Safety Manager - Head Office',
+  'HSE Head - Head Office',
+];
 
 function doPost(event) {
   try {
@@ -13,11 +23,14 @@ function doPost(event) {
     const lock = LockService.getScriptLock();
     lock.waitLock(10000);
     try {
-      const cooldownKey = `hazard_email_last_sent_${user.localId}`;
-      const lastSentAt = Number(properties.getProperty(cooldownKey)) || 0;
       const now = Date.now();
-      if (lastSentAt > 0 && now - lastSentAt < HAZARD_EMAIL_COOLDOWN_MS) {
-        return jsonResponse({ ok: true, sent: false, reason: 'cooldown' });
+      const projectId = properties.getProperty('FIREBASE_PROJECT_ID');
+      const databaseId = properties.getProperty('FIRESTORE_DATABASE_ID') || 'hazora';
+      if (!projectId) throw new Error('FIREBASE_PROJECT_ID script property is missing');
+      const accessToken = ScriptApp.getOAuthToken();
+      const recipients = getVerifiedRoleRecipients(projectId, databaseId, accessToken);
+      if (!recipients.some((recipient) => recipient.uid === user.localId)) {
+        return jsonResponse({ ok: false, sent: false, reason: 'approved_role_required' });
       }
 
       const hazardType = safeText(payload.hazardType, 'Possible PPE hazard', 100);
@@ -26,24 +39,51 @@ function doPost(event) {
       const cameraSource = safeText(payload.cameraSource, 'Camera not specified', 120);
       const dashboardUrl = properties.getProperty('HAZORA_DASHBOARD_URL');
       const subject = `HAZORA alert: ${hazardType}`.slice(0, 150);
-      const body = [
-        `Hello${user.displayName ? ` ${safeText(user.displayName, '', 80)}` : ''},`,
-        '',
-        `HAZORA detected a possible safety hazard: ${hazardType}.`,
-        `Severity: ${severity}`,
-        `Site: ${site}`,
-        `Camera: ${cameraSource}`,
-        `Detected: ${new Date(now).toLocaleString()}`,
-        '',
-        'Please open the HAZORA website or mobile app to review the incident and recommended precautions.',
-        ...(dashboardUrl ? [dashboardUrl] : []),
-        '',
-        'This is a reminder only. HAZORA limits hazard email alerts to one message per account every 15 minutes.',
-      ].join('\n');
+      let sentCount = 0;
+      let cooldownCount = 0;
+      let failedCount = 0;
 
-      GmailApp.sendEmail(user.email, subject, body, { name: 'HAZORA Safety Alerts' });
-      properties.setProperty(cooldownKey, String(now));
-      return jsonResponse({ ok: true, sent: true });
+      recipients.forEach((recipient) => {
+        const cooldownKey = `hazard_email_last_sent_${recipient.uid}`;
+        const lastSentAt = Number(properties.getProperty(cooldownKey)) || 0;
+        if (lastSentAt > 0 && now - lastSentAt < HAZARD_EMAIL_COOLDOWN_MS) {
+          cooldownCount += 1;
+          return;
+        }
+
+        const body = [
+          `Hello${recipient.displayName ? ` ${safeText(recipient.displayName, '', 80)}` : ''},`,
+          '',
+          `HAZORA detected a possible safety hazard: ${hazardType}.`,
+          `Severity: ${severity}`,
+          `Site: ${site}`,
+          `Camera: ${cameraSource}`,
+          `Detected: ${new Date(now).toLocaleString()}`,
+          '',
+          'Please open the HAZORA website or mobile app to review the incident and recommended precautions.',
+          ...(dashboardUrl ? [dashboardUrl] : []),
+          '',
+          'This is a reminder only. HAZORA limits hazard email alerts to one message per account every minute.',
+        ].join('\n');
+
+        try {
+          GmailApp.sendEmail(recipient.email, subject, body, { name: 'HAZORA Safety Alerts' });
+          properties.setProperty(cooldownKey, String(now));
+          sentCount += 1;
+        } catch (error) {
+          console.error(`Could not send hazard email to ${recipient.uid}: ${error.message}`);
+          failedCount += 1;
+        }
+      });
+
+      return jsonResponse({
+        ok: true,
+        sent: sentCount > 0,
+        sentCount,
+        failedCount,
+        recipientCount: recipients.length,
+        reason: sentCount > 0 ? 'sent' : cooldownCount > 0 ? 'cooldown' : 'no_eligible_recipients',
+      });
     } finally {
       lock.releaseLock();
     }
@@ -83,4 +123,75 @@ function jsonResponse(value) {
   return ContentService
     .createTextOutput(JSON.stringify(value))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+function getVerifiedRoleRecipients(projectId, databaseId, accessToken) {
+  const approvedRoles = new Set(HAZARD_EMAIL_ROLES);
+  const approvedUsers = new Map();
+  let firestorePageToken = '';
+
+  do {
+    const query = [`pageSize=1000`, firestorePageToken && `pageToken=${encodeURIComponent(firestorePageToken)}`]
+      .filter(Boolean)
+      .join('&');
+    const url = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}` +
+      `/databases/${encodeURIComponent(databaseId)}/documents/users?${query}`;
+    const response = UrlFetchApp.fetch(url, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      muteHttpExceptions: true,
+    });
+    if (response.getResponseCode() !== 200) {
+      throw new Error(`Could not list user profiles: ${response.getContentText()}`);
+    }
+
+    const page = JSON.parse(response.getContentText());
+    (page.documents || []).forEach((document) => {
+      const fields = document.fields || {};
+      const role = fields.role?.stringValue;
+      if (fields.approvalStatus?.stringValue !== 'approved' || !approvedRoles.has(role)) return;
+
+      const uid = document.name.split('/').pop();
+      approvedUsers.set(uid, {
+        uid,
+        role,
+        displayName: fields.fullName?.stringValue || '',
+      });
+    });
+    firestorePageToken = page.nextPageToken || '';
+  } while (firestorePageToken);
+
+  const verifiedRecipients = [];
+  let authPageToken = '';
+  do {
+    const query = [`maxResults=1000`, authPageToken && `nextPageToken=${encodeURIComponent(authPageToken)}`]
+      .filter(Boolean)
+      .join('&');
+    const url = `https://identitytoolkit.googleapis.com/v1/projects/${encodeURIComponent(projectId)}` +
+      `/accounts:batchGet?${query}`;
+    const response = UrlFetchApp.fetch(url, {
+      method: 'post',
+      contentType: 'application/json',
+      headers: { Authorization: `Bearer ${accessToken}` },
+      payload: '{}',
+      muteHttpExceptions: true,
+    });
+    if (response.getResponseCode() !== 200) {
+      throw new Error(`Could not list Firebase Auth users: ${response.getContentText()}`);
+    }
+
+    const page = JSON.parse(response.getContentText());
+    (page.users || []).forEach((account) => {
+      const profile = approvedUsers.get(account.localId);
+      if (!profile || !account.emailVerified || !account.email) return;
+
+      verifiedRecipients.push({
+        ...profile,
+        email: account.email,
+        displayName: account.displayName || profile.displayName,
+      });
+    });
+    authPageToken = page.nextPageToken || '';
+  } while (authPageToken);
+
+  return verifiedRecipients;
 }

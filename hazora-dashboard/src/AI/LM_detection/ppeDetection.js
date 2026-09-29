@@ -6,9 +6,9 @@ import * as blazeface from '@tensorflow-models/blazeface';
 export const PPE_MODEL_URL = '/models/ppe/yolov8n.tflite';
 export const PPE_LABELS = ['Safety Helmet', 'Safety Vest', 'Safety Shoes'];
 export const PPE_INPUT_SIZE = 640;
-// Raised from 0.40 to cut false positives (e.g. a "vest" drawn where there is
-// none). Uncertain/weak boxes below this confidence are discarded.
-export const PPE_CONFIDENCE_THRESHOLD = 0.55;
+// Keep the cutoff low enough to retain valid PPE detections in difficult frames
+// while still discarding very weak candidates.
+export const PPE_CONFIDENCE_THRESHOLD = 0.40;
 export const PPE_IOU_THRESHOLD = 0.45;
 const TFLITE_WASM_PATH = '/tflite/';
 
@@ -345,17 +345,17 @@ function overlapRatio(a, b) {
 // down the frame the person's body reaches. Avoids flagging "missing shoes"
 // when the feet aren't even visible. An item is always required if it was
 // actually detected. Returns { helmet, vest, shoes }.
-function inferRequiredPpe(bottomReach, labels) {
+function inferRequiredPpe(bottomReach, labels, feetVisible) {
   return {
     helmet: true, // head is essentially always in view when a person is detected
-    vest: labels.has('Safety Vest') || bottomReach >= 0.55,
-    shoes: labels.has('Safety Shoes') || bottomReach >= 0.85,
+    vest: labels.has('Safety Vest') || bottomReach >= 0.45,
+    shoes: labels.has('Safety Shoes') || feetVisible,
   };
 }
 
-function buildGroup(ownedDetections, bottomReach) {
+function buildGroup(ownedDetections, bottomReach, feetVisible = bottomReach >= 0.85) {
   const labels = new Set(ownedDetections.map((detection) => detection.label));
-  const required = inferRequiredPpe(bottomReach, labels);
+  const required = inferRequiredPpe(bottomReach, labels, feetVisible);
 
   const hasHelmet = labels.has('Safety Helmet');
   const hasVest = labels.has('Safety Vest');
@@ -402,7 +402,9 @@ export function groupPpeDetections(detections, canvasWidth, persons = [], canvas
       ));
       const personBottom = person.box.y + person.box.height;
       const bottomReach = canvasHeight > 0 ? personBottom / canvasHeight : 1;
-      return { person, ...buildGroup(owned, bottomReach) };
+      const feetVisible = canvasHeight > 0 && bottomReach >= 0.85 &&
+        personBottom < canvasHeight * 0.98;
+      return { person, ...buildGroup(owned, bottomReach, feetVisible) };
     });
   }
 

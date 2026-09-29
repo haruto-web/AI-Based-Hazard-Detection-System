@@ -45,20 +45,35 @@ describe('YOLOv8 output parsing', () => {
     values[1] = 0.5;
     values[2] = 0.2;
     values[3] = 0.4;
-    values[4] = 0.1; // below 0.45 threshold
+    values[4] = 0.1; // below 0.40 threshold
 
     const shape = [1, 1, channels];
     expect(parseYoloOutput(values, shape, 100, 100)).toHaveLength(0);
   });
+
+  it('keeps plausible PPE candidates at the lower confidence threshold', () => {
+    const values = new Float32Array(channels);
+    values[0] = 0.5;
+    values[1] = 0.5;
+    values[2] = 0.2;
+    values[3] = 0.4;
+    values[4] = 0.42;
+
+    const shape = [1, 1, channels];
+    const result = parseYoloOutput(values, shape, 100, 100);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].score).toBeCloseTo(0.42);
+  });
 });
 
 describe('PPE grouping', () => {
-  it('flags vest and shoes missing when the full body is in frame', () => {
+  it('flags vest and shoes missing when the full body and feet are in frame', () => {
     const detections = [
       { label: 'Safety Helmet', score: 0.9, box: { x: 45, y: 10, width: 10, height: 10 } },
     ];
-    // Person fills the whole 100px-tall frame -> feet visible -> shoes required.
-    const persons = [{ score: 0.95, box: { x: 20, y: 0, width: 60, height: 100 } }];
+    // The person reaches the lower frame but is not clipped at its bottom.
+    const persons = [{ score: 0.95, box: { x: 20, y: 0, width: 60, height: 95 } }];
 
     const groups = groupPpeDetections(detections, 100, persons, 100);
 
@@ -66,6 +81,31 @@ describe('PPE grouping', () => {
     expect(groups[0].hasHelmet).toBe(true);
     expect(groups[0].missing).toContain('Safety Vest');
     expect(groups[0].missing).toContain('Safety Shoes');
+  });
+
+  it('checks helmet and vest but not shoes in a half-body view', () => {
+    const detections = [
+      { label: 'Safety Helmet', score: 0.9, box: { x: 45, y: 5, width: 10, height: 10 } },
+    ];
+    const persons = [{ score: 0.95, box: { x: 20, y: 0, width: 60, height: 50 } }];
+
+    const groups = groupPpeDetections(detections, 100, persons, 100);
+
+    expect(groups[0].hasHelmet).toBe(true);
+    expect(groups[0].missing).toContain('Safety Vest');
+    expect(groups[0].missing).not.toContain('Safety Shoes');
+  });
+
+  it('does not require shoes when the person box is clipped by the frame', () => {
+    const detections = [
+      { label: 'Safety Helmet', score: 0.9, box: { x: 45, y: 5, width: 10, height: 10 } },
+    ];
+    const persons = [{ score: 0.95, box: { x: 20, y: 0, width: 60, height: 100 } }];
+
+    const groups = groupPpeDetections(detections, 100, persons, 100);
+
+    expect(groups[0].missing).toContain('Safety Vest');
+    expect(groups[0].missing).not.toContain('Safety Shoes');
   });
 
   it('does NOT require shoes for a headshot where feet are out of frame', () => {
