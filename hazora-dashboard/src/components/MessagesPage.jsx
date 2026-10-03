@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { addDoc, collection, doc, getDocs, limit, onSnapshot, orderBy, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
@@ -24,11 +24,57 @@ function getRecipientType(value) {
   return 'name';
 }
 
+function messageText(message) {
+  return message.message || message.body || message.preview || '';
+}
+
+function messageTime(message) {
+  const value = message.createdAt || message.timestamp;
+  const date = value?.toDate?.() || (value ? new Date(value) : null);
+  return date && !Number.isNaN(date.getTime())
+    ? date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+    : 'Just now';
+}
+
+function messageMillis(message) {
+  const value = message.createdAt || message.timestamp;
+  if (value?.toMillis) return value.toMillis();
+  const date = value?.toDate?.() || (value ? new Date(value) : null);
+  return date?.getTime?.() || 0;
+}
+
+function belongsToAccount(message, account, user) {
+  const normalized = (value) => typeof value === 'string' ? value.trim().toLowerCase() : '';
+  const accountAliases = [
+    account.username,
+    account.name,
+    account.id,
+    account.email,
+  ].map(normalized).filter(Boolean);
+  const userEmail = normalized(user.email);
+  const senderEmail = normalized(message.senderEmail || message.sender);
+  const recipientEmail = normalized(message.recipientEmail || message.recipient);
+  const sentByUser = message.senderId === user.uid ||
+    (message.source === 'website' && senderEmail === userEmail);
+  const sentToUser = message.recipientAuthUid === user.uid ||
+    recipientEmail === userEmail ||
+    normalized(message.recipientSearch) === userEmail;
+  const sentByAccount = (account.authUid && message.senderId === account.authUid) ||
+    accountAliases.includes(senderEmail) ||
+    accountAliases.includes(normalized(message.senderId));
+  const sentToAccount = (account.authUid && message.recipientAuthUid === account.authUid) ||
+    accountAliases.includes(normalized(message.recipientSearch)) ||
+    accountAliases.includes(recipientEmail);
+
+  return (sentByUser && sentToAccount) || (sentByAccount && sentToUser);
+}
+
 export default function MessagesPage({ userRole }) {
   const { user } = useAuth();
   const [form, setForm] = useState(initialForm);
   const [accounts, setAccounts] = useState([]);
   const [selectedAccount, setSelectedAccount] = useState(null);
+  const [contactSearch, setContactSearch] = useState('');
   const [messages, setMessages] = useState([]);
   const [inboxMessages, setInboxMessages] = useState([]);
   const [inboxLoading, setInboxLoading] = useState(true);
@@ -36,6 +82,7 @@ export default function MessagesPage({ userRole }) {
   const [contactsLoading, setContactsLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [notice, setNotice] = useState(null);
+  const conversationEndRef = useRef(null);
 
   const canSend = canSendMobileMessages(userRole);
 
@@ -102,31 +149,45 @@ export default function MessagesPage({ userRole }) {
       return undefined;
     }
 
-    async function loadMessages() {
-      try {
-        const [messagesSnapshot, accountsSnapshot] = await Promise.all([
-          getDocs(query(collection(db, 'messages'), orderBy('createdAt', 'desc'))),
-          getDocs(query(collection(db, 'mobile_accounts'), orderBy('createdAt', 'desc'), limit(50))),
-        ]);
-        setMessages(messagesSnapshot.docs.map((docSnap) => ({
+    let active = true;
+    const stopMessages = onSnapshot(
+      collection(db, 'messages'),
+      (snapshot) => {
+        const nextMessages = snapshot.docs.map((docSnap) => ({
           id: docSnap.id,
           ...docSnap.data(),
-        })));
-        setAccounts(accountsSnapshot.docs.map((docSnap) => ({
-          id: docSnap.id,
-          ...docSnap.data(),
-        })));
-      } catch (err) {
-        console.warn('Failed to load messages:', err.message);
-        setNotice({ type: 'error', text: 'Unable to load sent messages.' });
-      } finally {
+        }));
+        nextMessages.sort((a, b) => messageMillis(b) - messageMillis(a));
+        setMessages(nextMessages);
         setLoading(false);
-        setContactsLoading(false);
-      }
-    }
+      },
+      (err) => {
+        console.warn('Failed to listen for messages:', err.message);
+        setNotice({ type: 'error', text: 'Unable to load messages.' });
+        setLoading(false);
+      },
+    );
 
-    loadMessages();
-    return undefined;
+    getDocs(query(collection(db, 'mobile_accounts'), orderBy('createdAt', 'desc'), limit(50)))
+      .then((snapshot) => {
+        if (!active) return;
+        setAccounts(snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...docSnap.data(),
+        })));
+      })
+      .catch((err) => {
+        console.warn('Failed to load mobile contacts:', err.message);
+        if (active) setNotice({ type: 'error', text: 'Unable to load mobile contacts.' });
+      })
+      .finally(() => {
+        if (active) setContactsLoading(false);
+      });
+
+    return () => {
+      active = false;
+      stopMessages();
+    };
   }, [canSend]);
 
   function handleChange(field, value) {
@@ -162,6 +223,8 @@ export default function MessagesPage({ userRole }) {
         recipient,
         recipientType: getRecipientType(recipient),
         recipientSearch: recipient.toLowerCase(),
+        recipientAuthUid: selectedAccount.authUid || '',
+        recipientEmail: selectedAccount.email || '',
         message,
         body: message,
         preview: message,
@@ -203,17 +266,41 @@ export default function MessagesPage({ userRole }) {
   }
 
   const visibleMessages = selectedAccount
-    ? messages.filter((item) => {
-        const recipient = (item.recipient || '').toLowerCase();
-        return [selectedAccount.username, selectedAccount.name, selectedAccount.id]
-          .filter(Boolean)
-          .some((value) => recipient === value.toLowerCase());
-      })
+    ? messages
+      .filter((item) => belongsToAccount(item, selectedAccount, user))
+      .sort((a, b) => messageMillis(a) - messageMillis(b))
     : messages;
+
+  const filteredAccounts = accounts.filter((account) => (
+    `${account.name || ''} ${account.username || ''} ${account.site || ''}`
+      .toLowerCase()
+      .includes(contactSearch.trim().toLowerCase())
+  ));
+
+  useEffect(() => {
+    conversationEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [selectedAccount?.id, visibleMessages.length]);
+
+  useEffect(() => {
+    if (!selectedAccount) return;
+    messages.filter((item) => belongsToAccount(item, selectedAccount, user)).forEach((item) => {
+      const sentByUser = item.senderId === user.uid ||
+        (item.source === 'website' && (item.senderEmail || '').toLowerCase() === (user.email || '').toLowerCase());
+      if (!sentByUser && item.unread !== false && item.status !== 'read') {
+        updateDoc(doc(db, 'messages', item.id), {
+          unread: false,
+          status: 'read',
+          readAt: serverTimestamp(),
+        }).catch((error) => {
+          console.warn('Failed to mark conversation message as read:', error.message);
+        });
+      }
+    });
+  }, [selectedAccount, messages, user]);
 
   return (
     <div className="messages-page">
-      <section className="messages-panel website-inbox">
+      {!canSend && <section className="messages-panel website-inbox">
         <header className="message-history-header">
           <div>
             <h3>Inbox</h3>
@@ -253,7 +340,7 @@ export default function MessagesPage({ userRole }) {
             })}
           </div>
         )}
-      </section>
+      </section>}
 
       {canSend && (
       <section className="messages-panel messenger-panel">
@@ -261,17 +348,36 @@ export default function MessagesPage({ userRole }) {
           <div className="messenger-contacts-header">
             <div>
               <h2>Messages</h2>
-              <p>Select a mobile user</p>
+              <p>Chat with mobile users</p>
             </div>
             <span>{accounts.length}</span>
+          </div>
+          <div className="contact-search">
+            <input
+              type="search"
+              value={contactSearch}
+              onChange={(event) => setContactSearch(event.target.value)}
+              placeholder="Search people or sites"
+              aria-label="Search mobile users"
+            />
           </div>
           <div className="contact-list">
             {contactsLoading ? (
               <p className="messages-empty">Loading contacts...</p>
             ) : accounts.length === 0 ? (
               <p className="messages-empty">No mobile accounts found.</p>
+            ) : filteredAccounts.length === 0 ? (
+              <p className="messages-empty">No contacts match your search.</p>
             ) : (
-              accounts.map((account) => (
+              filteredAccounts.map((account) => {
+                const accountMessages = messages.filter((item) => belongsToAccount(item, account, user));
+                const latestMessage = accountMessages[0];
+                const unreadCount = accountMessages.filter((item) => (
+                  item.senderId !== user.uid &&
+                  item.unread !== false &&
+                  item.status !== 'read'
+                )).length;
+                return (
                 <button
                   type="button"
                   className={`contact-item ${selectedAccount?.id === account.id ? 'active' : ''}`}
@@ -283,10 +389,15 @@ export default function MessagesPage({ userRole }) {
                   </span>
                   <span className="contact-details">
                     <strong>{account.name || account.username}</strong>
-                    <small>{account.username || 'Mobile user'}</small>
+                    <small>{latestMessage ? messageText(latestMessage) : account.site || account.username || 'Mobile user'}</small>
+                  </span>
+                  <span className="contact-meta">
+                    {latestMessage && <time>{messageTime(latestMessage)}</time>}
+                    {unreadCount > 0 && <span className="contact-unread">{unreadCount}</span>}
                   </span>
                 </button>
-              ))
+                );
+              })
             )}
           </div>
         </aside>
@@ -300,7 +411,7 @@ export default function MessagesPage({ userRole }) {
                 </span>
                 <div>
                   <h2>{selectedAccount.name || selectedAccount.username}</h2>
-                  <p>{selectedAccount.username || 'Mobile user'}</p>
+                  <p>{selectedAccount.site || selectedAccount.username || 'Mobile user'}</p>
                 </div>
               </>
             ) : (
@@ -323,26 +434,36 @@ export default function MessagesPage({ userRole }) {
             ) : !selectedAccount ? (
               <p className="messages-empty">Choose a person to view the conversation.</p>
             ) : visibleMessages.length === 0 ? (
-              <p className="messages-empty">No messages with this person yet.</p>
+              <div className="conversation-empty">
+                <span className="contact-avatar" aria-hidden="true">
+                  {(selectedAccount.name || selectedAccount.username || '?').trim().charAt(0).toUpperCase()}
+                </span>
+                <strong>Start a conversation</strong>
+                <p>Send a message to {selectedAccount.name || selectedAccount.username}.</p>
+              </div>
             ) : (
-              visibleMessages.map((item) => (
-                <article className="message-row" key={item.id}>
-                  <div className="message-row-main">
-                    <div className="message-row-top">
+              visibleMessages.map((item) => {
+                const sentByUser = item.senderId === user.uid ||
+                  (item.source === 'website' && (item.senderEmail || '').toLowerCase() === (user.email || '').toLowerCase());
+                return (
+                  <article className={`chat-message ${sentByUser ? 'sent' : 'received'}`} key={item.id}>
+                    {!sentByUser && (
                       <span className="message-avatar" aria-hidden="true">
                         {(selectedAccount.name || selectedAccount.username || '?').trim().charAt(0).toUpperCase()}
                       </span>
-                      <strong>{selectedAccount.name || item.recipient}</strong>
-                      <span className={`message-status ${item.status || 'unread'}`}>
-                        {item.status || 'unread'}
+                    )}
+                    <div className="chat-message-content">
+                      <p className="chat-bubble">{messageText(item)}</p>
+                      <span className="chat-message-meta">
+                        {messageTime(item)}
+                        {sentByUser && ` · ${item.status === 'read' || item.unread === false ? 'Seen' : 'Sent'}`}
                       </span>
                     </div>
-                    <p className="message-bubble">{item.message}</p>
-                  </div>
-                  <span className="message-sender">From {item.senderEmail || 'Website user'}</span>
-                </article>
-              ))
+                  </article>
+                );
+              })
             )}
+            <div ref={conversationEndRef} />
           </div>
 
           <form className="message-form messenger-composer" onSubmit={handleSubmit}>
@@ -353,14 +474,20 @@ export default function MessagesPage({ userRole }) {
               readOnly
             />
             <div className="message-field">
-              <label htmlFor="message-body">Message</label>
+              <label className="visually-hidden" htmlFor="message-body">Message</label>
               <textarea
                 id="message-body"
                 value={form.message}
                 onChange={(e) => handleChange('message', e.target.value)}
-                placeholder={selectedAccount ? `Message ${selectedAccount.name || selectedAccount.username}` : 'Select a person first'}
+                placeholder={selectedAccount ? 'Type a message… (Enter to send, Shift+Enter for a new line)' : 'Select a person first'}
                 disabled={sending || !selectedAccount}
                 rows={3}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault();
+                    event.currentTarget.form?.requestSubmit();
+                  }
+                }}
               />
             </div>
 

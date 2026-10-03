@@ -189,7 +189,7 @@ export default function Dashboard() {
             {activeView === 'profile' && <ProfilePage />}
           </div>
 
-          <Footer />
+          {activeView === 'dashboard' && <Footer />}
         </main>
       </div>
 
