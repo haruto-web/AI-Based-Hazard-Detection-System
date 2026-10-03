@@ -175,7 +175,7 @@
 }
 
 .admin-user-row {
-  grid-template-columns: minmax(190px, 1.2fr) repeat(2, minmax(170px, 1fr)) auto;
+  grid-template-columns: minmax(190px, 1.2fr) repeat(2, minmax(170px, 1fr)) minmax(160px, auto) auto;
 }
 
 .admin-user-identity,
@@ -210,6 +210,18 @@
   background: var(--bg-input);
   color: var(--text-primary);
   font: inherit;
+}
+
+.admin-mobile-access {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+}
+
+.admin-mobile-access input {
+  accent-color: var(--accent);
 }
 
 .admin-role-field input::placeholder {
@@ -251,7 +263,7 @@
 }
 
 .admin-directory-row {
-  grid-template-columns: 1.2fr 1.5fr 1.5fr 1fr 0.9fr 1.2fr auto;
+  grid-template-columns: 1.2fr 1.5fr 1.5fr 1fr minmax(110px, 1fr) 0.9fr 1.2fr auto;
 }
 
 .admin-directory-row > div {
@@ -269,6 +281,28 @@
 .admin-directory-actions {
   display: flex;
   justify-content: flex-end;
+}
+
+.admin-directory-mobile {
+  align-items: flex-start;
+}
+
+.admin-directory-mobile button {
+  min-height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.admin-directory-mobile button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .admin-directory-actions button {

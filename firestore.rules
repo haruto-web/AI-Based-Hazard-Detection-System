@@ -46,7 +46,35 @@ service cloud.firestore {
     match /mobile_accounts/{accountId} {
       allow read: if true;
       allow update: if true;
-      allow create, delete: if isHSEHead();
+      allow create: if isHSEHead() || (
+        isAdmin() &&
+        accountId == request.resource.data.authUid &&
+        request.resource.data.keys().hasAll([
+          'name', 'role', 'username', 'usernameLowercase', 'email', 'authUid',
+          'site', 'status', 'mobileSetupStatus', 'linkedWebsiteUid',
+          'createdBy', 'createdByEmail', 'createdAt'
+        ]) &&
+        request.resource.data.keys().hasOnly([
+          'name', 'role', 'username', 'usernameLowercase', 'email', 'authUid',
+          'site', 'status', 'mobileSetupStatus', 'linkedWebsiteUid',
+          'createdBy', 'createdByEmail', 'createdAt'
+        ]) &&
+        request.resource.data.authUid == accountId &&
+        request.resource.data.linkedWebsiteUid == accountId &&
+        request.resource.data.createdBy == request.auth.uid &&
+        request.resource.data.createdAt == request.time &&
+        request.resource.data.status == 'active' &&
+        request.resource.data.mobileSetupStatus == 'setup_required' &&
+        getAfter(/databases/$(database)/documents/users/$(accountId)).data.approvalStatus == 'approved' &&
+        (
+          get(/databases/$(database)/documents/users/$(accountId)).data.approvalStatus == 'approved' ||
+          getAfter(/databases/$(database)/documents/users/$(accountId)).data.reviewedBy == request.auth.uid
+        ) &&
+        getAfter(/databases/$(database)/documents/users/$(accountId)).data.email == request.resource.data.email &&
+        getAfter(/databases/$(database)/documents/users/$(accountId)).data.role == request.resource.data.role &&
+        getAfter(/databases/$(database)/documents/users/$(accountId)).data.site == request.resource.data.site
+      );
+      allow delete: if isHSEHead();
     }
 
     match /messages/{messageId} {

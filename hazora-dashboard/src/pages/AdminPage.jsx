@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { signOut } from 'firebase/auth';
-import { collection, deleteDoc, doc, getDocs, limit, onSnapshot, orderBy, query, serverTimestamp, where, writeBatch } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDocs, limit, onSnapshot, orderBy, query, runTransaction, serverTimestamp, where, writeBatch } from 'firebase/firestore';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { auth, db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
@@ -19,6 +19,26 @@ function formatDate(value) {
   return value.toDate().toLocaleString();
 }
 
+function mobileSetupRecord(account, role, site, createdBy, createdByEmail) {
+  const email = account.email.trim();
+  const emailLowercase = email.toLowerCase();
+  return {
+    name: account.fullName || email,
+    role,
+    username: email,
+    usernameLowercase: emailLowercase,
+    email,
+    authUid: account.id,
+    site,
+    status: 'active',
+    mobileSetupStatus: 'setup_required',
+    linkedWebsiteUid: account.id,
+    createdBy,
+    createdByEmail: createdByEmail || '',
+    createdAt: serverTimestamp(),
+  };
+}
+
 export default function AdminPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -30,6 +50,7 @@ export default function AdminPage() {
   const [mobileAccounts, setMobileAccounts] = useState([]);
   const [selectedRoles, setSelectedRoles] = useState({});
   const [selectedSites, setSelectedSites] = useState({});
+  const [selectedMobileAccess, setSelectedMobileAccess] = useState({});
   const [loading, setLoading] = useState(true);
   const [busyUid, setBusyUid] = useState(null);
   const [message, setMessage] = useState(null);
@@ -91,6 +112,8 @@ export default function AdminPage() {
   async function reviewUser(uid, decision) {
     const role = selectedRoles[uid];
     const site = selectedSites[uid];
+    const enableMobileAccess = selectedMobileAccess[uid] ?? true;
+    const pendingAccount = pendingUsers.find((account) => account.id === uid);
     if (decision === 'approve' && !role) {
       setMessage({ type: 'error', text: 'Choose the verified user role before approving.' });
       return;
@@ -113,11 +136,9 @@ export default function AdminPage() {
     try {
       const batch = writeBatch(db);
       let linkedMobileAccount = null;
-      if (decision === 'approve') {
+      if (decision === 'approve' && enableMobileAccess) {
         const mobileAccountsRef = collection(db, 'mobile_accounts');
-        const accountEmail = pendingUsers
-          .find((account) => account.id === uid)
-          ?.email?.trim().toLowerCase();
+        const accountEmail = pendingAccount?.email?.trim();
         const mobileAccountSnapshot = await getDocs(query(
           mobileAccountsRef,
           where('authUid', '==', uid),
@@ -127,8 +148,7 @@ export default function AdminPage() {
         if (!linkedMobileAccount && accountEmail) {
           const emailSnapshot = await getDocs(query(
             mobileAccountsRef,
-            where('email', '==', accountEmail),
-            limit(1),
+            where('email', '==', accountEmail.toLowerCase()),
           ));
           linkedMobileAccount = emailSnapshot.docs.find((account) =>
             !account.data().authUid || account.data().authUid === uid
@@ -138,7 +158,16 @@ export default function AdminPage() {
           batch.update(linkedMobileAccount.ref, {
             site: normalizedSite,
             authUid: uid,
+            mobileSetupStatus: linkedMobileAccount.data().mobileSetupStatus || 'setup_required',
           });
+        } else {
+          if (!accountEmail) {
+            throw new Error('The website profile has no email address, so mobile access cannot be enabled.');
+          }
+          batch.set(
+            doc(db, 'mobile_accounts', uid),
+            mobileSetupRecord(pendingAccount, role, normalizedSite, user.uid, user.email),
+          );
         }
       }
 
@@ -164,7 +193,7 @@ export default function AdminPage() {
       setMessage({
         type: 'success',
         text: decision === 'approve'
-          ? `User approved and assigned to ${normalizedSite}.${linkedMobileAccount ? ' The linked mobile account was updated too.' : ' No linked mobile account was found, so only the website profile was updated.'}`
+          ? `User approved and assigned to ${normalizedSite}.${enableMobileAccess ? ' Mobile access is enabled; the user can sign in with the same email and password. First mobile sign-in completes setup.' : ' Mobile access was not enabled.'}`
           : 'User rejected.',
       });
     } catch (error) {
@@ -220,6 +249,53 @@ export default function AdminPage() {
           ? 'Firestore denied this update. Publish the latest firestore.rules to the hazora database, then try again.'
           : error.message || 'Could not update the user site.',
       });
+    } finally {
+      setBusyUid(null);
+    }
+  }
+
+  async function prepareMobileAccess(account) {
+    const email = account.email?.trim();
+    const site = account.site?.trim();
+    if (account.approvalStatus !== 'approved') {
+      setMessage({ type: 'error', text: 'Approve the website account before enabling mobile access.' });
+      return;
+    }
+    if (!email || !site || !account.role) {
+      setMessage({ type: 'error', text: 'Add the user email, role, and site before enabling mobile access.' });
+      return;
+    }
+
+    const existingAccount = mobileAccounts.find((mobileAccount) =>
+      mobileAccount.authUid === account.id ||
+      (mobileAccount.email?.trim().toLowerCase() === email.toLowerCase() &&
+        (!mobileAccount.authUid || mobileAccount.authUid === account.id))
+    );
+    if (existingAccount) {
+      setMessage({ type: 'error', text: 'This user already has a linked mobile account.' });
+      return;
+    }
+
+    setBusyUid(account.id);
+    setMessage(null);
+    try {
+      await runTransaction(db, async (transaction) => {
+        const mobileAccountRef = doc(db, 'mobile_accounts', account.id);
+        const existingSnapshot = await transaction.get(mobileAccountRef);
+        if (existingSnapshot.exists()) {
+          throw new Error('This user already has a mobile account record.');
+        }
+        transaction.set(
+          mobileAccountRef,
+          mobileSetupRecord(account, account.role, site, user.uid, user.email),
+        );
+      });
+      setMessage({
+        type: 'success',
+        text: `Mobile access prepared for ${email}. The user can sign in with the same email and password; first sign-in completes setup.`,
+      });
+    } catch (error) {
+      setMessage({ type: 'error', text: error.message || 'Could not prepare mobile access.' });
     } finally {
       setBusyUid(null);
     }
@@ -318,7 +394,7 @@ export default function AdminPage() {
             <div className="admin-section-heading">
               <div>
                 <h2>Pending registrations</h2>
-                <p>Verify the person through your organization, then assign a role and site. Removing a profile does not delete its Firebase Authentication login.</p>
+                <p>Verify the person through your organization, then assign a role and site. Mobile access is prepared by default; users sign in with the same email and password, and their first mobile sign-in completes setup.</p>
               </div>
             </div>
             {loading ? <p className="admin-empty">Loading registrations…</p> : pendingUsers.length === 0 ? (
@@ -355,6 +431,18 @@ export default function AdminPage() {
                         disabled={busyUid === account.id}
                       />
                     </label>
+                    <label className="admin-mobile-access">
+                      <input
+                        type="checkbox"
+                        checked={selectedMobileAccess[account.id] ?? true}
+                        onChange={(event) => setSelectedMobileAccess((current) => ({
+                          ...current,
+                          [account.id]: event.target.checked,
+                        }))}
+                        disabled={busyUid === account.id}
+                      />
+                      <span>Enable mobile app access</span>
+                    </label>
                     <div className="admin-row-actions">
                       <button type="button" className="admin-approve" onClick={() => reviewUser(account.id, 'approve')} disabled={busyUid === account.id}>
                         {busyUid === account.id ? 'Working…' : 'Verify & approve'}
@@ -383,8 +471,14 @@ export default function AdminPage() {
               <p className="admin-empty">No website users found.</p>
             ) : (
               <div className="admin-directory-list">
-                {websiteUsers.map((account) => (
-                  <article className="admin-directory-row" key={account.id}>
+                {websiteUsers.map((account) => {
+                  const linkedMobileAccount = mobileAccounts.find((mobileAccount) =>
+                    mobileAccount.authUid === account.id ||
+                    (mobileAccount.email?.trim().toLowerCase() === account.email?.trim().toLowerCase() &&
+                      (!mobileAccount.authUid || mobileAccount.authUid === account.id))
+                  );
+                  return (
+                    <article className="admin-directory-row" key={account.id}>
                     <div><span>Name</span><strong>{account.fullName || 'Name not provided'}</strong></div>
                     <div><span>Email</span><strong>{account.email || 'Email not provided'}</strong></div>
                     <div><span>Role</span><strong>{account.role || 'Not assigned'}</strong></div>
@@ -407,6 +501,27 @@ export default function AdminPage() {
                         {busyUid === account.id ? 'Saving…' : 'Save site'}
                       </button>
                     </div>
+                    <div className="admin-directory-mobile">
+                      <span>Mobile app</span>
+                      <strong>
+                        {linkedMobileAccount
+                          ? linkedMobileAccount.mobileSetupStatus === 'setup_required'
+                            ? 'Setup required'
+                            : linkedMobileAccount.mobileSetupStatus === 'active'
+                              ? 'Active'
+                              : linkedMobileAccount.status || 'Linked'
+                          : 'Not enabled'}
+                      </strong>
+                      {!linkedMobileAccount && account.approvalStatus === 'approved' && (
+                        <button
+                          type="button"
+                          onClick={() => prepareMobileAccess(account)}
+                          disabled={busyUid === account.id}
+                        >
+                          {busyUid === account.id ? 'Preparing…' : 'Prepare access'}
+                        </button>
+                      )}
+                    </div>
                     <div><span>Status</span><strong>{account.approvalStatus || 'Existing account'}</strong></div>
                     <div><span>Registered</span><strong>{formatDate(account.createdAt)}</strong></div>
                     {account.id !== user.uid &&
@@ -422,8 +537,9 @@ export default function AdminPage() {
                           </button>
                         </div>
                       )}
-                  </article>
-                ))}
+                    </article>
+                  );
+                })}
               </div>
             )}
           </section>
@@ -432,7 +548,7 @@ export default function AdminPage() {
             <div className="admin-section-heading">
               <div>
                 <h2>Mobile app accounts</h2>
-                <p>Account identifiers and access status. Passwords are intentionally not displayed.</p>
+                <p>Prepared accounts show Setup required until the user signs in to the app. Website and mobile access use the same Firebase email and password.</p>
               </div>
             </div>
             {loading ? <p className="admin-empty">Loading mobile accounts…</p> : mobileAccounts.length === 0 ? (
@@ -445,7 +561,7 @@ export default function AdminPage() {
                     <div><span>Username</span><strong>{account.username || 'Not provided'}</strong></div>
                     <div><span>Role</span><strong>{account.role || 'Not assigned'}</strong></div>
                     <div><span>Site</span><strong>{account.site || 'Not assigned'}</strong></div>
-                    <div><span>Status</span><strong>{account.status || 'Unknown'}</strong></div>
+                    <div><span>Status</span><strong>{account.mobileSetupStatus === 'setup_required' ? 'Setup required' : account.mobileSetupStatus === 'active' ? 'Active' : account.status || 'Unknown'}</strong></div>
                   </article>
                 ))}
               </div>

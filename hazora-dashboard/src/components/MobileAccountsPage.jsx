@@ -308,7 +308,7 @@ export default function MobileAccountsPage({ userRole }) {
         <div className="mobile-accounts-header">
           <div>
             <h2>Mobile Device Accounts</h2>
-            <p>Link an existing Firebase account or create a new mobile profile. New users verify their email first, then use Forgot Password in the app to set their password.</p>
+            <p>Approved website users can have mobile access prepared here automatically. They sign in with the same verified email and password; first sign-in completes setup. Manually created accounts can still be linked here.</p>
           </div>
         </div>
 
@@ -406,6 +406,10 @@ export default function MobileAccountsPage({ userRole }) {
                 <div>
                   <span className="mobile-credential-label">Firebase Auth email</span>
                   <code>{account.email || 'Not linked yet'}</code>
+                </div>
+                <div>
+                  <span className="mobile-credential-label">Mobile setup</span>
+                  <strong>{account.mobileSetupStatus === 'setup_required' ? 'Setup required' : account.mobileSetupStatus === 'active' ? 'Active' : account.status || 'Unknown'}</strong>
                 </div>
               </article>
             ))}

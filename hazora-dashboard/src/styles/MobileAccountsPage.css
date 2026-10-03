@@ -154,7 +154,7 @@
 
 .mobile-account-row {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(120px, 180px) minmax(120px, 180px);
+  grid-template-columns: minmax(180px, 1fr) minmax(120px, 180px) minmax(120px, 180px) minmax(120px, 150px);
   gap: 1rem;
   align-items: center;
   padding: 1rem 1.5rem;
