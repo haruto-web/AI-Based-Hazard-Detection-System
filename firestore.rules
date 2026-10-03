@@ -86,6 +86,11 @@ service cloud.firestore {
           'fullName', 'email', 'phone', 'cameraIP', 'cameras', 'lastLogin', 'site'
         ]) || (
           isAdmin() &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['site']) &&
+          request.resource.data.site is string &&
+          request.resource.data.site.size() <= 120
+        ) || (
+          isAdmin() &&
           resource.data.approvalStatus == 'pending' &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'approvalStatus', 'role', 'site', 'reviewedAt', 'reviewedBy'
@@ -109,7 +114,9 @@ service cloud.firestore {
             )
           )
         );
-      allow delete: if isAdmin() && resource.data.approvalStatus == 'pending';
+      allow delete: if isAdmin() &&
+        userId != request.auth.uid &&
+        resource.data.email != 'mirasolvenandrew@gmail.com';
 
       match /notifications/{notifId} {
         allow read, update, delete: if isSignedIn() && request.auth.uid == userId;

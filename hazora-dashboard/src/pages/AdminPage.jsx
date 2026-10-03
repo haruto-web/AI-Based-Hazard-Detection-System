@@ -12,6 +12,7 @@ const PRIVILEGED_ROLES = new Set([
   'Safety Manager - Head Office',
   'HSE Head - Head Office',
 ]);
+const PROTECTED_ACCOUNT_EMAIL = 'mirasolvenandrew@gmail.com';
 
 function formatDate(value) {
   if (!value?.toDate) return 'Not available';
@@ -161,15 +162,74 @@ export default function AdminPage() {
     }
   }
 
+  async function saveUserSite(account) {
+    const site = (selectedSites[account.id] ?? account.site ?? '').trim();
+    if (site.length > 120) {
+      setMessage({ type: 'error', text: 'Site location must be 120 characters or fewer.' });
+      return;
+    }
+
+    setBusyUid(account.id);
+    setMessage(null);
+    try {
+      const batch = writeBatch(db);
+      batch.update(doc(db, 'users', account.id), { site });
+
+      const mobileAccountsRef = collection(db, 'mobile_accounts');
+      const mobileAccountsByUid = await getDocs(query(
+        mobileAccountsRef,
+        where('authUid', '==', account.id),
+        limit(1),
+      ));
+      let linkedAccount = mobileAccountsByUid.docs[0];
+      if (!linkedAccount && account.email) {
+        const email = account.email.trim().toLowerCase();
+        const emailSnapshot = await getDocs(query(
+          mobileAccountsRef,
+          where('email', '==', email),
+          limit(1),
+        ));
+        linkedAccount = emailSnapshot.docs.find((item) =>
+          !item.data().authUid || item.data().authUid === account.id
+        );
+      }
+
+      if (linkedAccount) batch.update(linkedAccount.ref, { site });
+
+      await batch.commit();
+      setMessage({
+        type: 'success',
+        text: `Site location ${site ? `updated to ${site}` : 'cleared'}${linkedAccount ? ' for the website and mobile accounts.' : ' for the website account.'}`,
+      });
+    } catch (error) {
+      setMessage({
+        type: 'error',
+        text: error.code === 'permission-denied'
+          ? 'Firestore denied this update. Publish the latest firestore.rules to the hazora database, then try again.'
+          : error.message || 'Could not update the user site.',
+      });
+    } finally {
+      setBusyUid(null);
+    }
+  }
+
   async function deleteUser(account) {
+    if (
+      account.id === user.uid ||
+      account.email?.trim().toLowerCase() === PROTECTED_ACCOUNT_EMAIL
+    ) {
+      setMessage({ type: 'error', text: 'This account is protected and cannot be removed here.' });
+      return;
+    }
+
     const label = account.email || account.fullName || account.id;
-    if (!window.confirm(`Remove the pending profile for ${label}? This does not delete the Firebase Authentication login.`)) return;
+    if (!window.confirm(`Remove the website profile for ${label}? This leaves its Firebase Authentication login, mobile-account record, and subcollection data untouched.`)) return;
 
     setBusyUid(account.id);
     setMessage(null);
     try {
       await deleteDoc(doc(db, 'users', account.id));
-      setMessage({ type: 'success', text: 'Pending profile removed. Delete the Firebase Authentication user separately in Firebase Console if needed.' });
+      setMessage({ type: 'success', text: 'Website profile removed. Its Firebase Authentication login, mobile-account record, and subcollection data were left untouched.' });
     } catch (error) {
       setMessage({ type: 'error', text: error.message || 'Could not delete this account.' });
     } finally {
@@ -307,7 +367,7 @@ export default function AdminPage() {
             <div className="admin-section-heading">
               <div>
                 <h2>All website users</h2>
-                <p>Website account roles and verification status.</p>
+                <p>Choose a site and save to update the website profile and any linked mobile account.</p>
               </div>
             </div>
             {loading ? <p className="admin-empty">Loading website users…</p> : websiteUsers.length === 0 ? (
@@ -319,9 +379,40 @@ export default function AdminPage() {
                     <div><span>Name</span><strong>{account.fullName || 'Name not provided'}</strong></div>
                     <div><span>Email</span><strong>{account.email || 'Email not provided'}</strong></div>
                     <div><span>Role</span><strong>{account.role || 'Not assigned'}</strong></div>
-                    <div><span>Site</span><strong>{account.site || 'Not assigned'}</strong></div>
+                    <div className="admin-user-site">
+                      <label htmlFor={`site-${account.id}`}>Site</label>
+                      <input
+                        id={`site-${account.id}`}
+                        type="text"
+                        value={selectedSites[account.id] ?? account.site ?? ''}
+                        onChange={(event) => setSelectedSites((current) => ({ ...current, [account.id]: event.target.value }))}
+                        placeholder="Enter site location"
+                        maxLength={120}
+                        disabled={busyUid === account.id}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => saveUserSite(account)}
+                        disabled={busyUid === account.id}
+                      >
+                        {busyUid === account.id ? 'Saving…' : 'Save site'}
+                      </button>
+                    </div>
                     <div><span>Status</span><strong>{account.approvalStatus || 'Existing account'}</strong></div>
                     <div><span>Registered</span><strong>{formatDate(account.createdAt)}</strong></div>
+                    {account.id !== user.uid &&
+                      account.email?.trim().toLowerCase() !== PROTECTED_ACCOUNT_EMAIL && (
+                        <div className="admin-directory-actions">
+                          <button
+                            type="button"
+                            className="admin-delete"
+                            onClick={() => deleteUser(account)}
+                            disabled={busyUid === account.id}
+                          >
+                            {busyUid === account.id ? 'Removing…' : 'Remove profile'}
+                          </button>
+                        </div>
+                      )}
                   </article>
                 ))}
               </div>
