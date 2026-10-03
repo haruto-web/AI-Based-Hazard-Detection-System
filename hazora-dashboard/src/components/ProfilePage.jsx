@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { reload, sendEmailVerification, sendPasswordResetEmail } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, limit, query, setDoc, where } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import '../styles/ProfilePage.css';
@@ -12,7 +12,9 @@ export default function ProfilePage() {
     email: '',
     phone: '',
     role: '',
+    site: '',
   });
+  const [mobileAccount, setMobileAccount] = useState({ status: 'checking', account: null });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -33,6 +35,7 @@ export default function ProfilePage() {
             email: data.email || user.email || '',
             phone: data.phone || '',
             role: data.role || '',
+            site: data.site || '',
           });
         } else {
           // Fallback if no profile doc exists yet
@@ -41,7 +44,31 @@ export default function ProfilePage() {
             email: user.email || '',
             phone: '',
             role: '',
+            site: '',
           });
+        }
+
+        try {
+          const mobileAccountsRef = collection(db, 'mobile_accounts');
+          const email = user.email?.trim().toLowerCase();
+          const [byUid, byEmail] = await Promise.all([
+            getDocs(query(mobileAccountsRef, where('authUid', '==', user.uid), limit(1))),
+            email
+              ? getDocs(query(mobileAccountsRef, where('email', '==', email), limit(1)))
+              : Promise.resolve(null),
+          ]);
+          const emailMatch = byEmail?.docs.find((accountDoc) => {
+            const authUid = accountDoc.data().authUid;
+            return !authUid || authUid === user.uid;
+          });
+          const accountDoc = byUid.docs[0] || emailMatch;
+          setMobileAccount({
+            status: accountDoc ? 'found' : 'none',
+            account: accountDoc?.data() || null,
+          });
+        } catch (err) {
+          console.warn('Failed to check for a mobile app account:', err.message);
+          setMobileAccount({ status: 'error', account: null });
         }
       } catch (err) {
         console.warn('Failed to load profile:', err.message);
@@ -50,7 +77,9 @@ export default function ProfilePage() {
           email: user.email || '',
           phone: '',
           role: '',
+          site: '',
         });
+        setMobileAccount({ status: 'error', account: null });
       } finally {
         setLoading(false);
       }
@@ -222,6 +251,34 @@ export default function ProfilePage() {
             <input
               id="profile-role"
               value={profile.role || 'Pending admin assignment'}
+              disabled
+              className="field-readonly"
+            />
+          </div>
+
+          <div className="profile-field">
+            <label htmlFor="profile-site">Site Location</label>
+            <input
+              id="profile-site"
+              value={profile.site || 'No site assigned'}
+              disabled
+              className="field-readonly"
+            />
+          </div>
+
+          <div className="profile-field">
+            <label htmlFor="profile-mobile-account">Mobile App Account</label>
+            <input
+              id="profile-mobile-account"
+              value={
+                mobileAccount.status === 'checking'
+                  ? 'Checking account...'
+                  : mobileAccount.status === 'error'
+                    ? 'Unable to check account'
+                    : mobileAccount.account
+                      ? `Linked${mobileAccount.account.status ? ` (${mobileAccount.account.status})` : ''}`
+                      : 'No mobile app account'
+              }
               disabled
               className="field-readonly"
             />

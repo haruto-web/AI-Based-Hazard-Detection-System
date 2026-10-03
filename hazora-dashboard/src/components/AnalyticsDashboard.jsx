@@ -89,7 +89,7 @@ function StatIcon({ type }) {
   }
 }
 
-const INCIDENT_COLUMNS = ['Date', 'Time', 'Hazard Type', 'Description', 'Recommended Action', 'Camera Source', 'Severity', 'Status', 'Confidence', 'Actions'];
+const INCIDENT_COLUMNS = ['Date', 'Time', 'Hazard Type', 'Site', 'Description', 'Recommended Action', 'Camera Source', 'Severity', 'Status', 'Confidence', 'Actions'];
 
 const PAGE_SIZE = 20;
 
@@ -515,6 +515,7 @@ export default function AnalyticsDashboard({ readOnly = false }) {
                     <td>{incident.date}</td>
                     <td>{incident.time}</td>
                     <td>{incident.hazardType}</td>
+                    <td>{incident.site || 'Site location not set'}</td>
                     <td className="incident-description">{incident.description}</td>
                     <td className="incident-action">{incident.precautions || '—'}</td>
                     <td>{incident.cameraSource}</td>

@@ -223,7 +223,7 @@ function linkMobileAccount(payload, caller, properties) {
   const name = safeText(payload.name, '', 100);
   const username = safeText(payload.username, '', 80);
   const email = safeText(payload.email, '', 254).toLowerCase();
-  const site = safeText(payload.site, '', 120);
+  let site = safeText(payload.site, '', 120);
   if (name.length < 3 || username.length < 3 || site.length < 2 ||
       !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return jsonResponse({ ok: false, reason: 'invalid_account_details' });
@@ -237,6 +237,17 @@ function linkMobileAccount(payload, caller, properties) {
 
   const existingAuthUser = findFirebaseAuthUserByEmail(projectId, email, accessToken);
   if (!existingAuthUser) return jsonResponse({ ok: true, exists: false });
+
+  const websiteProfile = getFirestoreDocument(
+    projectId,
+    databaseId,
+    `users/${existingAuthUser.localId}`,
+    accessToken,
+  );
+  const assignedWebsiteSite = websiteProfile?.fields?.site?.stringValue;
+  if (websiteProfile?.fields?.approvalStatus?.stringValue === 'approved' && assignedWebsiteSite) {
+    site = safeText(assignedWebsiteSite, site, 120);
+  }
 
   const usernameLowercase = username.toLowerCase();
   const emailMatch = queryFirestoreDocument(projectId, databaseId, 'mobile_accounts', 'email', email, accessToken);

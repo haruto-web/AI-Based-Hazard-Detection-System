@@ -174,7 +174,7 @@
 }
 
 .admin-user-row {
-  grid-template-columns: minmax(190px, 1.2fr) minmax(200px, 1fr) auto;
+  grid-template-columns: minmax(190px, 1.2fr) repeat(2, minmax(170px, 1fr)) auto;
 }
 
 .admin-user-identity,
@@ -245,7 +245,7 @@
 }
 
 .admin-directory-row {
-  grid-template-columns: 1.2fr 1.5fr 1.5fr 0.9fr 1.2fr;
+  grid-template-columns: 1.2fr 1.5fr 1.5fr 1fr 0.9fr 1.2fr;
 }
 
 .admin-directory-row > div {

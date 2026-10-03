@@ -257,7 +257,7 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
 
           addNotification({
             violationType: report.hazardType,
-            cameraSource: cameraIP,
+            cameraSource: `Site: ${siteForIncident} | Camera: ${cameraIP}`,
             message: report.notificationMessage,
             severity: report.severity,
           });

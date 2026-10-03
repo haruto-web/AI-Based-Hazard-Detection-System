@@ -18,6 +18,7 @@ export function useCameraSettings(userId) {
   });
   const [userRole, setUserRole] = useState('');
   const [userName, setUserName] = useState('');
+  const [userSite, setUserSite] = useState('');
 
   useEffect(() => {
     if (!userId) {
@@ -64,6 +65,9 @@ export function useCameraSettings(userId) {
           }
           if (data.fullName) {
             setUserName(data.fullName);
+          }
+          if (data.site) {
+            setUserSite(data.site);
           }
           if (data.cameras && Array.isArray(data.cameras)) {
             setCameras(data.cameras);
@@ -136,6 +140,7 @@ export function useCameraSettings(userId) {
     mainStreamId,
     userRole,
     userName,
+    userSite,
     handleCameraIPChange,
     handleMainStreamChange,
   };

@@ -88,7 +88,7 @@ service cloud.firestore {
           isAdmin() &&
           resource.data.approvalStatus == 'pending' &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            'approvalStatus', 'role', 'reviewedAt', 'reviewedBy'
+            'approvalStatus', 'role', 'site', 'reviewedAt', 'reviewedBy'
           ]) &&
           request.resource.data.reviewedBy == request.auth.uid &&
           request.resource.data.reviewedAt == request.time &&
@@ -96,6 +96,8 @@ service cloud.firestore {
             (
               request.resource.data.approvalStatus == 'approved' &&
               isValidUserRole(request.resource.data.role) &&
+              request.resource.data.site is string &&
+              request.resource.data.site.size() > 0 &&
               (!(request.resource.data.role in [
                 'Safety Engineer - Head Office',
                 'Safety Manager - Head Office',

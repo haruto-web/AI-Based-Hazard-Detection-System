@@ -321,11 +321,12 @@ export function filterIncidentsByMonthYear(incidents, monthYear) {
 
 export function buildIncidentCsv(incidents) {
   const rows = [
-    ['Date', 'Time', 'Hazard Type', 'Description', 'Recommended Action', 'Camera Source', 'Severity', 'Status', 'Confidence', 'Workers', 'Compliant', 'Helmet', 'No Helmet', 'Vest', 'No Vest', 'Shoes', 'No Shoes', 'Detection Model'],
+    ['Date', 'Time', 'Hazard Type', 'Site', 'Description', 'Recommended Action', 'Camera Source', 'Severity', 'Status', 'Confidence', 'Workers', 'Compliant', 'Helmet', 'No Helmet', 'Vest', 'No Vest', 'Shoes', 'No Shoes', 'Detection Model'],
     ...incidents.map((incident) => [
       incident.date,
       incident.time,
       incident.hazardType,
+      incident.site || incident.location || 'Site location not set',
       incident.description || '',
       incident.precautions || '',
       incident.cameraSource,
@@ -501,7 +502,7 @@ export function buildIncidentPdf(incidents, title = 'Hazora Safety Report') {
     const descriptionLines = doc.splitTextToSize(normalized.description, contentWidth - 20);
     const actionText = normalized.precautions ? `Recommended action: ${normalized.precautions}` : '';
     const actionLines = actionText ? doc.splitTextToSize(actionText, contentWidth - 20) : [];
-    const rowHeight = 76 + Math.max(0, descriptionLines.length - 1) * 11 + (actionLines.length ? actionLines.length * 11 + 4 : 0);
+    const rowHeight = 89 + Math.max(0, descriptionLines.length - 1) * 11 + (actionLines.length ? actionLines.length * 11 + 4 : 0);
 
     if (y + rowHeight > 800) {
       doc.addPage();
@@ -519,11 +520,12 @@ export function buildIncidentPdf(incidents, title = 'Hazora Safety Report') {
     doc.setFontSize(9);
     doc.setTextColor(65, 75, 86);
     doc.text(`${normalized.date} ${normalized.time}  |  Camera: ${normalized.cameraSource || 'N/A'}`, margin + 10, y + 31);
-    doc.text(`Status: ${normalized.status}  |  Confidence: ${normalized.detectionConfidence ? `${Math.round(normalized.detectionConfidence * 100)}%` : 'N/A'}  |  Model: ${normalized.model || 'unknown'}`, margin + 10, y + 45);
+    doc.text(`Site: ${normalized.site || 'Site location not set'}`, margin + 10, y + 45);
+    doc.text(`Status: ${normalized.status}  |  Confidence: ${normalized.detectionConfidence ? `${Math.round(normalized.detectionConfidence * 100)}%` : 'N/A'}  |  Model: ${normalized.model || 'unknown'}`, margin + 10, y + 58);
     doc.setTextColor(45, 55, 65);
-    doc.text(descriptionLines, margin + 10, y + 60);
+    doc.text(descriptionLines, margin + 10, y + 73);
     if (actionLines.length) {
-      const actionY = y + 60 + descriptionLines.length * 11 + 4;
+      const actionY = y + 73 + descriptionLines.length * 11 + 4;
       doc.setTextColor(150, 70, 20);
       doc.text(actionLines, margin + 10, actionY);
     }

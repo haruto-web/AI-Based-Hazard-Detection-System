@@ -36,6 +36,7 @@ export default function Dashboard() {
     connectedCount,
     mainStreamId,
     userRole,
+    userSite,
     handleCameraIPChange,
     handleMainStreamChange,
   } = useCameraSettings(user.uid);
@@ -43,7 +44,7 @@ export default function Dashboard() {
   // Detection is owned here so the annotated canvas can overlay the main stream
   // and the AI Detection panel can share the same state. The site location (if
   // known) is stamped on auto-captured violation images for the gallery.
-  const detection = useDetection(cameraIP, connectedCount > 0, user?.site || '');
+  const detection = useDetection(cameraIP, connectedCount > 0, userSite);
 
   function getCameraWebsite(camera) {
     if (!camera) return '';
