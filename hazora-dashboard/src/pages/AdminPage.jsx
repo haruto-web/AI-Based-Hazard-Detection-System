@@ -28,7 +28,6 @@ export default function AdminPage() {
   const [pendingUsers, setPendingUsers] = useState([]);
   const [websiteUsers, setWebsiteUsers] = useState([]);
   const [mobileAccounts, setMobileAccounts] = useState([]);
-  const [sites, setSites] = useState([]);
   const [selectedRoles, setSelectedRoles] = useState({});
   const [selectedSites, setSelectedSites] = useState({});
   const [loading, setLoading] = useState(true);
@@ -56,9 +55,8 @@ export default function AdminPage() {
 
     let loadedUsers = false;
     let loadedMobileAccounts = false;
-    let loadedSites = false;
     const finishInitialLoad = () => {
-      if (loadedUsers && loadedMobileAccounts && loadedSites) setLoading(false);
+      if (loadedUsers && loadedMobileAccounts) setLoading(false);
     };
     const handleError = (error) => {
       setMessage({ type: 'error', text: error.message || 'Could not load admin records.' });
@@ -84,21 +82,9 @@ export default function AdminPage() {
       finishInitialLoad();
     }, handleError);
 
-    const unsubscribeSites = onSnapshot(collection(db, 'sites'), (snapshot) => {
-      const siteList = [...new Set(snapshot.docs
-        .map((item) => item.data().name)
-        .filter((name) => typeof name === 'string' && name.trim())
-        .map((name) => name.trim())
-      )].sort((a, b) => a.localeCompare(b));
-      setSites(siteList);
-      loadedSites = true;
-      finishInitialLoad();
-    }, handleError);
-
     return () => {
       unsubscribeUsers();
       unsubscribeMobileAccounts();
-      unsubscribeSites();
     };
   }, [isAdmin]);
 
@@ -109,31 +95,57 @@ export default function AdminPage() {
       setMessage({ type: 'error', text: 'Choose the verified user role before approving.' });
       return;
     }
-    if (decision === 'approve' && (!site || !sites.includes(site))) {
-      setMessage({ type: 'error', text: 'Choose the user site before approving.' });
-      return;
+    if (decision === 'approve') {
+      const normalizedSite = (site || '').trim();
+      if (!normalizedSite) {
+        setMessage({ type: 'error', text: 'Enter the user site before approving.' });
+        return;
+      }
+      if (normalizedSite.length > 120) {
+        setMessage({ type: 'error', text: 'Site location must be 120 characters or fewer.' });
+        return;
+      }
     }
+    const normalizedSite = decision === 'approve' ? site.trim() : '';
 
     setBusyUid(uid);
     setMessage(null);
     try {
       const batch = writeBatch(db);
+      let linkedMobileAccount = null;
       if (decision === 'approve') {
+        const mobileAccountsRef = collection(db, 'mobile_accounts');
+        const accountEmail = pendingUsers
+          .find((account) => account.id === uid)
+          ?.email?.trim().toLowerCase();
         const mobileAccountSnapshot = await getDocs(query(
-          collection(db, 'mobile_accounts'),
+          mobileAccountsRef,
           where('authUid', '==', uid),
           limit(1),
         ));
-        const linkedMobileAccount = mobileAccountSnapshot.docs[0];
+        linkedMobileAccount = mobileAccountSnapshot.docs[0] || null;
+        if (!linkedMobileAccount && accountEmail) {
+          const emailSnapshot = await getDocs(query(
+            mobileAccountsRef,
+            where('email', '==', accountEmail),
+            limit(1),
+          ));
+          linkedMobileAccount = emailSnapshot.docs.find((account) =>
+            !account.data().authUid || account.data().authUid === uid
+          ) || null;
+        }
         if (linkedMobileAccount) {
-          batch.update(linkedMobileAccount.ref, { site });
+          batch.update(linkedMobileAccount.ref, {
+            site: normalizedSite,
+            authUid: uid,
+          });
         }
       }
 
       batch.update(doc(db, 'users', uid), {
         approvalStatus: decision === 'approve' ? 'approved' : 'rejected',
         role: decision === 'approve' ? role : null,
-        ...(decision === 'approve' ? { site } : {}),
+        ...(decision === 'approve' ? { site: normalizedSite } : {}),
         reviewedAt: serverTimestamp(),
         reviewedBy: user.uid,
       });
@@ -142,7 +154,7 @@ export default function AdminPage() {
         type: decision === 'approve' ? 'account_approved' : 'account_rejected',
         violationType: decision === 'approve' ? 'Account verified' : 'Account review complete',
         cameraSource: decision === 'approve'
-          ? `Your account is verified. Your assigned role is ${role} and site is ${site}. You can now access the website.`
+          ? `Your account is verified. Your assigned role is ${role} and site is ${normalizedSite}. You can now access the website.`
           : 'Your account was not approved. Please contact your administrator if you need more information.',
         role: decision === 'approve' ? role : null,
         read: false,
@@ -152,7 +164,7 @@ export default function AdminPage() {
       setMessage({
         type: 'success',
         text: decision === 'approve'
-          ? `User approved and assigned to ${site}.`
+          ? `User approved and assigned to ${normalizedSite}.${linkedMobileAccount ? ' The linked mobile account was updated too.' : ' No linked mobile account was found, so only the website profile was updated.'}`
           : 'User rejected.',
       });
     } catch (error) {
@@ -309,9 +321,6 @@ export default function AdminPage() {
                 <p>Verify the person through your organization, then assign a role and site. Removing a profile does not delete its Firebase Authentication login.</p>
               </div>
             </div>
-            {!loading && sites.length === 0 && (
-              <p className="admin-message error" role="status">Add at least one site before approving registrations.</p>
-            )}
             {loading ? <p className="admin-empty">Loading registrations…</p> : pendingUsers.length === 0 ? (
               <p className="admin-empty">No users are waiting for verification.</p>
             ) : (
@@ -337,17 +346,17 @@ export default function AdminPage() {
                     </label>
                     <label className="admin-role-field">
                       <span>Assign site</span>
-                      <select
-                        value={selectedSites[account.id] || ''}
+                      <input
+                        type="text"
+                        value={selectedSites[account.id] ?? account.site ?? ''}
                         onChange={(event) => setSelectedSites((current) => ({ ...current, [account.id]: event.target.value }))}
-                        disabled={busyUid === account.id || sites.length === 0}
-                      >
-                        <option value="">Choose site</option>
-                        {sites.map((site) => <option key={site} value={site}>{site}</option>)}
-                      </select>
+                        placeholder="Enter site location"
+                        maxLength={120}
+                        disabled={busyUid === account.id}
+                      />
                     </label>
                     <div className="admin-row-actions">
-                      <button type="button" className="admin-approve" onClick={() => reviewUser(account.id, 'approve')} disabled={busyUid === account.id || sites.length === 0}>
+                      <button type="button" className="admin-approve" onClick={() => reviewUser(account.id, 'approve')} disabled={busyUid === account.id}>
                         {busyUid === account.id ? 'Working…' : 'Verify & approve'}
                       </button>
                       <button type="button" className="admin-reject" onClick={() => reviewUser(account.id, 'reject')} disabled={busyUid === account.id}>

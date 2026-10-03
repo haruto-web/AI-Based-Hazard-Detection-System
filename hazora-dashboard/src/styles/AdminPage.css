@@ -84,7 +84,8 @@
 
 .admin-refresh:disabled,
 .admin-row-actions button:disabled,
-.admin-role-field select:disabled {
+.admin-role-field select:disabled,
+.admin-role-field input:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
@@ -199,7 +200,8 @@
   overflow-wrap: anywhere;
 }
 
-.admin-role-field select {
+.admin-role-field select,
+.admin-role-field input {
   width: 100%;
   min-height: 40px;
   padding: 0 10px;
@@ -208,6 +210,10 @@
   background: var(--bg-input);
   color: var(--text-primary);
   font: inherit;
+}
+
+.admin-role-field input::placeholder {
+  color: var(--text-secondary);
 }
 
 .admin-row-actions {
