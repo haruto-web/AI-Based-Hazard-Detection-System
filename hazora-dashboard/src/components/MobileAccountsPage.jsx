@@ -18,6 +18,38 @@ const initialForm = {
   site: '',
 };
 
+export function parseMobileAccountLinkResponse(payload) {
+  if (!payload || typeof payload !== 'object') {
+    return { ok: false, reason: 'invalid_response' };
+  }
+
+  return {
+    ...payload,
+    ok: payload.ok === true,
+  };
+}
+
+export function getMobileAccountLinkErrorMessage(reason) {
+  switch (reason) {
+    case 'hse_head_required':
+      return 'Only the HSE Head - Head Office can link mobile accounts.';
+    case 'verified_account_required':
+      return 'The signed-in account must be verified before linking a mobile device account.';
+    case 'approved_role_required':
+      return 'The signed-in account must hold an approved safety role.';
+    case 'username_already_used':
+      return 'That username is already in use. Choose a different Code / ID / Username.';
+    case 'email_linked_to_another_account':
+      return 'This email is already linked to a different mobile account.';
+    case 'invalid_account_details':
+      return 'Please complete all mobile account fields before saving.';
+    case 'invalid_response':
+      return 'The account-link service did not return a valid response. Refresh and try again.';
+    default:
+      return 'The account-link service rejected the request. Refresh and try again.';
+  }
+}
+
 export default function MobileAccountsPage({ userRole }) {
   const { user } = useAuth();
   const [form, setForm] = useState(initialForm);
@@ -110,19 +142,36 @@ export default function MobileAccountsPage({ userRole }) {
       if (!endpoint) throw new Error('The Apps Script account-link endpoint is not configured.');
 
       const idToken = await user.getIdToken();
-      await fetch(endpoint, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({
-          action: 'link_mobile_account',
-          idToken,
-          name: cleanName,
-          username: cleanUsername,
-          email: cleanEmail,
-          site: cleanSite,
-        }),
+      const linkParams = new URLSearchParams({
+        action: 'link_mobile_account',
+        idToken,
+        name: cleanName,
+        username: cleanUsername,
+        email: cleanEmail,
+        site: cleanSite,
       });
+
+      const linkResponse = await fetch(`${endpoint}?${linkParams.toString()}`, {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+      });
+
+      const linkPayloadText = await linkResponse.text();
+      let linkPayload = null;
+      try {
+        linkPayload = JSON.parse(linkPayloadText);
+      } catch (parseError) {
+        console.warn('Failed to parse Apps Script link response:', parseError.message);
+      }
+
+      const linkResult = parseMobileAccountLinkResponse(linkPayload);
+      if (!linkResponse.ok || linkResult.ok === false) {
+        setMessage({
+          type: 'error',
+          text: getMobileAccountLinkErrorMessage(linkResult.reason || 'invalid_response'),
+        });
+        return;
+      }
 
       const linkedSnapshot = await getDocs(query(
         collection(db, 'mobile_accounts'),

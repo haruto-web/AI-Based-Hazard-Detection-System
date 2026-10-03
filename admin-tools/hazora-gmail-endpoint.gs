@@ -11,9 +11,24 @@ const HAZARD_EMAIL_ROLES = [
   'HSE Head - Head Office',
 ];
 
+function doGet(e) {
+  return handleRequest({
+    parameter: e && e.parameter ? e.parameter : {},
+    postData: { contents: '' },
+  });
+}
+
 function doPost(event) {
+  return handleRequest(event || { parameter: {}, postData: { contents: '{}' } });
+}
+
+function handleRequest(event) {
   try {
-    const payload = JSON.parse(event.postData.contents || '{}');
+    const parameterPayload = event && event.parameter ? event.parameter : {};
+    const postPayload = event && event.postData && event.postData.contents
+      ? JSON.parse(event.postData.contents || '{}')
+      : {};
+    const payload = Object.keys(parameterPayload).length > 0 ? parameterPayload : postPayload;
     const user = verifyFirebaseUser(payload.idToken);
     if (!user || !user.emailVerified || !user.email) {
       return jsonResponse({ ok: false, reason: 'verified_account_required' });
@@ -234,12 +249,13 @@ function linkMobileAccount(payload, caller, properties) {
     accessToken,
   ) || queryFirestoreDocument(projectId, databaseId, 'mobile_accounts', 'username', username, accessToken);
 
-  if (usernameMatch && usernameMatch.name !== emailMatch?.name &&
-      usernameMatch.fields?.authUid?.stringValue !== existingAuthUser.localId) {
+  const emailBelongsToThisAuthUser = emailMatch && emailMatch.fields?.authUid?.stringValue === existingAuthUser.localId;
+  const usernameBelongsToThisAuthUser = usernameMatch && usernameMatch.fields?.authUid?.stringValue === existingAuthUser.localId;
+
+  if (usernameMatch && !usernameBelongsToThisAuthUser && usernameMatch.name !== emailMatch?.name) {
     return jsonResponse({ ok: false, reason: 'username_already_used' });
   }
-  if (emailMatch && emailMatch.fields?.authUid?.stringValue &&
-      emailMatch.fields.authUid.stringValue !== existingAuthUser.localId) {
+  if (emailMatch && !emailBelongsToThisAuthUser && emailMatch.fields?.authUid?.stringValue) {
     return jsonResponse({ ok: false, reason: 'email_linked_to_another_account' });
   }
 
