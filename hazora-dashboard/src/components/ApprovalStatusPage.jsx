@@ -4,7 +4,7 @@ const STATUS_COPY = {
   pending: {
     eyebrow: 'ACCOUNT REVIEW',
     title: 'Waiting for admin verification',
-    message: 'Your account has been created. An administrator must verify your account and assign your role before you can use the dashboard.',
+    message: 'Your HAZORA website account and mobile app access use the same email and password. Before signing in, check your inbox and spam/junk folder for the HAZORA email verification message sent to your email address, then click its verification link. An administrator must approve your account and assign your role before you can use the dashboard. Once approved, use this same verified email and password in the mobile app.',
   },
   rejected: {
     eyebrow: 'ACCOUNT REVIEW',

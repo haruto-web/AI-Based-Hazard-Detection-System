@@ -33,73 +33,6 @@
   font-size: 0.85rem;
 }
 
-.mobile-account-form {
-  padding: 1.5rem;
-}
-
-.mobile-form-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1rem;
-}
-
-.mobile-field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-}
-
-.mobile-field label {
-  color: var(--text-secondary);
-  font-size: 0.8rem;
-  font-weight: 600;
-  text-transform: uppercase;
-}
-
-.mobile-field input,
-.mobile-field select {
-  min-height: 44px;
-  padding: 0.75rem 1rem;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-input);
-  color: var(--text-primary);
-  font-size: 0.9rem;
-}
-
-.mobile-field input:focus,
-.mobile-field select:focus {
-  outline: none;
-  border-color: var(--accent);
-}
-
-.mobile-actions {
-  display: flex;
-  justify-content: flex-end;
-  padding-top: 1.25rem;
-}
-
-.mobile-actions button {
-  min-height: 44px;
-  padding: 0.65rem 1.25rem;
-  border: none;
-  border-radius: 8px;
-  background: var(--accent);
-  color: #ffffff;
-  cursor: pointer;
-  font-size: 0.85rem;
-  font-weight: 700;
-}
-
-.mobile-actions button:hover:not(:disabled) {
-  background: var(--accent-hover);
-}
-
-.mobile-actions button:disabled {
-  cursor: not-allowed;
-  opacity: 0.65;
-}
-
 .mobile-message {
   padding: 0.75rem 1.5rem;
   border-bottom: 1px solid var(--border);
@@ -115,29 +48,6 @@
 .mobile-message.error {
   background: rgba(244, 67, 54, 0.08);
   color: var(--error);
-}
-
-.mobile-temporary-password {
-  display: grid;
-  gap: 0.35rem;
-  margin-top: 0.65rem;
-  padding: 0.65rem 0.75rem;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg-card);
-}
-
-.mobile-temporary-password strong {
-  color: var(--text-secondary);
-  font-size: 0.72rem;
-  text-transform: uppercase;
-}
-
-.mobile-temporary-password code {
-  color: var(--text-primary);
-  font-size: 0.95rem;
-  user-select: all;
-  overflow-wrap: anywhere;
 }
 
 .mobile-empty {
@@ -199,17 +109,8 @@
 }
 
 @media (max-width: 768px) {
-  .mobile-form-grid,
   .mobile-account-row {
     grid-template-columns: 1fr;
-  }
-
-  .mobile-actions {
-    justify-content: stretch;
-  }
-
-  .mobile-actions button {
-    width: 100%;
   }
 }
 

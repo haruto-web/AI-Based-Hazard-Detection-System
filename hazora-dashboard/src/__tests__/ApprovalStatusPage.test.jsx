@@ -3,13 +3,15 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import ApprovalStatusPage from '../components/ApprovalStatusPage';
 
 describe('ApprovalStatusPage', () => {
-  it('tells pending users to wait for admin verification', () => {
+  it('explains email verification and shared mobile access while pending approval', () => {
     const markup = renderToStaticMarkup(
       <ApprovalStatusPage status="pending" email="new.user@example.com" onSignOut={vi.fn()} />,
     );
 
     expect(markup).toContain('Waiting for admin verification');
-    expect(markup).toContain('must verify your account and assign your role');
+    expect(markup).toContain('inbox and spam/junk folder');
+    expect(markup).toContain('click its verification link');
+    expect(markup).toContain('same verified email and password in the mobile app');
     expect(markup).toContain('new.user@example.com');
   });
 

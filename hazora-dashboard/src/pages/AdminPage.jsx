@@ -181,9 +181,9 @@ export default function AdminPage() {
       const notificationRef = doc(collection(db, 'users', uid, 'notifications'));
       batch.set(notificationRef, {
         type: decision === 'approve' ? 'account_approved' : 'account_rejected',
-        violationType: decision === 'approve' ? 'Account verified' : 'Account review complete',
+        violationType: decision === 'approve' ? 'Account approved' : 'Account review complete',
         cameraSource: decision === 'approve'
-          ? `Your account is verified. Your assigned role is ${role} and site is ${normalizedSite}. You can now access the website.`
+          ? `Your HAZORA website account is approved. Your assigned role is ${role} and site is ${normalizedSite}. Check your inbox and spam/junk folder for the HAZORA email verification message sent to your email address, then click its link to verify your email before signing in. ${enableMobileAccess ? 'Mobile app access is included with this account. After verifying your email, use the same email and password to sign in to both the website and mobile app; your first mobile sign-in completes setup.' : 'Mobile app access was not enabled for this account.'}`
           : 'Your account was not approved. Please contact your administrator if you need more information.',
         role: decision === 'approve' ? role : null,
         read: false,
