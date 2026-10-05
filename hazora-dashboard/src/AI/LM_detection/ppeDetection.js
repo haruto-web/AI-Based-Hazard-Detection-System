@@ -6,10 +6,8 @@ import * as blazeface from '@tensorflow-models/blazeface';
 export const PPE_MODEL_URL = '/models/ppe/yolov8n.tflite';
 export const PPE_LABELS = ['Safety Helmet', 'Safety Vest', 'Safety Shoes'];
 export const PPE_INPUT_SIZE = 640;
-// Keep the cutoff low enough to retain valid PPE detections in difficult frames
-// while still discarding very weak candidates.
-export const PPE_CONFIDENCE_THRESHOLD = 0.40;
-export const PPE_IOU_THRESHOLD = 0.45;
+export const PPE_CONFIDENCE_THRESHOLD = 0.77;
+export const PPE_IOU_THRESHOLD = 0.70;
 const TFLITE_WASM_PATH = '/tflite/';
 
 // Logged once so the real YOLOv8 output tensor layout can be verified in the console.

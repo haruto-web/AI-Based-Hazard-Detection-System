@@ -5,6 +5,7 @@ import {
   getAutoBrightnessScale,
   parseYoloOutput,
   groupPpeDetections,
+  PPE_CONFIDENCE_THRESHOLD,
   PPE_LABELS,
 } from '../AI/LM_detection/ppeDetection';
 
@@ -51,19 +52,31 @@ describe('YOLOv8 output parsing', () => {
     expect(parseYoloOutput(values, shape, 100, 100)).toHaveLength(0);
   });
 
-  it('keeps plausible PPE candidates at the lower confidence threshold', () => {
+  it('keeps detections at the configured confidence threshold', () => {
     const values = new Float32Array(channels);
     values[0] = 0.5;
     values[1] = 0.5;
     values[2] = 0.2;
     values[3] = 0.4;
-    values[4] = 0.42;
+    values[4] = PPE_CONFIDENCE_THRESHOLD + 0.01;
 
     const shape = [1, 1, channels];
     const result = parseYoloOutput(values, shape, 100, 100);
 
     expect(result).toHaveLength(1);
-    expect(result[0].score).toBeCloseTo(0.42);
+    expect(result[0].score).toBeCloseTo(PPE_CONFIDENCE_THRESHOLD + 0.01);
+  });
+
+  it('drops detections below the configured confidence threshold', () => {
+    const values = new Float32Array(channels);
+    values[0] = 0.5;
+    values[1] = 0.5;
+    values[2] = 0.2;
+    values[3] = 0.4;
+    values[4] = PPE_CONFIDENCE_THRESHOLD - 0.01;
+
+    const shape = [1, 1, channels];
+    expect(parseYoloOutput(values, shape, 100, 100)).toHaveLength(0);
   });
 });
 
