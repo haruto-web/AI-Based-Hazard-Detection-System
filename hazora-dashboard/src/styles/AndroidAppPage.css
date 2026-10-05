@@ -109,27 +109,6 @@
   max-width: 400px;
 }
 
-.android-download-icon {
-  display: grid;
-  width: 48px;
-  aspect-ratio: 1;
-  place-items: center;
-  margin-bottom: 18px;
-  border-radius: 8px;
-  background: var(--accent-bg);
-  color: var(--accent);
-}
-
-.android-download-icon svg {
-  width: 24px;
-  height: 24px;
-  fill: none;
-  stroke: currentColor;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 1.8;
-}
-
 .android-download-panel h3 {
   margin: 0;
   font-size: 1.2rem;
@@ -178,10 +157,5 @@
     width: 100%;
     max-width: 420px;
     text-align: center;
-  }
-
-  .android-download-icon {
-    margin-right: auto;
-    margin-left: auto;
   }
 }

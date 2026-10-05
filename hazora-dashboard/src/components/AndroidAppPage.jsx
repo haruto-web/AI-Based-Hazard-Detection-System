@@ -66,12 +66,6 @@ export default function AndroidAppPage() {
         </div>
 
         <div className="android-download-panel">
-          <div className="android-download-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24">
-              <path d="M12 3v12m0 0 4-4m-4 4-4-4" />
-              <path d="M5 15v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4" />
-            </svg>
-          </div>
           <h3>Android application</h3>
           <p>Use the QR code or open the download directly on your Android device.</p>
           {validDownloadUrl ? (
