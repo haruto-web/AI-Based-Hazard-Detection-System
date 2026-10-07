@@ -60,7 +60,7 @@ export async function loadPpeDetectionModels() {
   tflite.setWasmPath(TFLITE_WASM_PATH);
 
   const ppeModel = await tflite.loadTFLiteModel(PPE_MODEL_URL, {
-    numThreads: Math.max(1, Math.floor((navigator.hardwareConcurrency || 2) / 2)),
+    numThreads: Math.max(1, Math.min(2, Math.floor((navigator.hardwareConcurrency || 2) / 2))),
   });
 
   const personModel = await cocoSsd.load({ base: 'lite_mobilenet_v2' });

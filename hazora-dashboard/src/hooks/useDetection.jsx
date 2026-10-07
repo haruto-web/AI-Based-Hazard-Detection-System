@@ -21,6 +21,8 @@ import { buildHazardReport } from '../AI/LM_detection/hazardDetails';
 // A violation must persist across this many consecutive frames before it
 // alerts, so a single-frame model miss (flicker) doesn't fire a false alarm.
 const PPE_FRAMES_TO_REPORT = 5;
+const DETECTION_INTERVAL_MS = 350;
+const PERSON_DETECTION_INTERVAL_MS = 2400;
 // Safety-net re-alert window: even a continuously-present, already-alerted
 // person can re-alert at most once per this interval (prevents true silence
 // on a long-standing violation, without per-frame spam).
@@ -66,6 +68,8 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
   // Per-track, per-item last-alert time for the 5-min re-alert safety net.
   const lastAlertRef = useRef({});
   const lastEmailSentRef = useRef({});
+  const cachedPersonsRef = useRef([]);
+  const lastPersonDetectionAtRef = useRef(0);
   const { addNotification } = useNotifications();
   const { user } = useAuth();
   const userId = user?.uid;
@@ -161,10 +165,19 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
       canvas.height = image.naturalHeight;
       ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
 
-      const [ppeObjects, persons] = await Promise.all([
+      const shouldRefreshPersons = personModel &&
+        Date.now() - lastPersonDetectionAtRef.current >= PERSON_DETECTION_INTERVAL_MS;
+      const [ppeObjects, refreshedPersons] = await Promise.all([
         detectPpeObjects({ ppeModel, canvas }),
-        personModel ? detectPersons({ personModel, canvas }) : Promise.resolve([]),
+        shouldRefreshPersons
+          ? detectPersons({ personModel, canvas })
+          : Promise.resolve(null),
       ]);
+      if (refreshedPersons) {
+        cachedPersonsRef.current = refreshedPersons;
+        lastPersonDetectionAtRef.current = Date.now();
+      }
+      const persons = cachedPersonsRef.current;
 
       // One group per detected person (falls back to spatial clustering when
       // no person model output is available). canvas.height enables adaptive
@@ -357,18 +370,27 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
 
   useEffect(() => {
     if (detecting && ppeModel && isConnected && cameraIP) {
-      timerRef.current = setTimeout(() => {
-        detectFrame();
-        timerRef.current = setInterval(detectFrame, 700);
-      }, 0);
+      let cancelled = false;
+      const scheduleNext = (delay) => {
+        timerRef.current = setTimeout(async () => {
+          await detectFrame();
+          if (!cancelled) scheduleNext(DETECTION_INTERVAL_MS);
+        }, delay);
+      };
+      scheduleNext(0);
+
+      return () => {
+        cancelled = true;
+        if (timerRef.current) clearTimeout(timerRef.current);
+      };
     }
-    return () => {
-      if (timerRef.current) {
-        clearTimeout(timerRef.current);
-        clearInterval(timerRef.current);
-      }
-    };
+    return undefined;
   }, [detecting, ppeModel, isConnected, cameraIP, detectFrame]);
+
+  useEffect(() => {
+    cachedPersonsRef.current = [];
+    lastPersonDetectionAtRef.current = 0;
+  }, [cameraIP]);
 
   useEffect(() => {
     let idleId = null;
@@ -393,7 +415,7 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
     if (detecting) {
       setDetecting(false);
       setStatus('');
-      if (timerRef.current) clearInterval(timerRef.current);
+      if (timerRef.current) clearTimeout(timerRef.current);
       // Clear tracking state so a fresh session starts clean.
       trackerRef.current.reset();
       confirmFramesRef.current = {};
