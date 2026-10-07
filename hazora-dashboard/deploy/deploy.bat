@@ -11,7 +11,7 @@ set "PEM=D:\Downloads\Hazora.pem"
 set "EC2_USER=ec2-user"
 set "EC2_HOST=54.254.183.46"
 set "REMOTE_ROOT=/usr/share/nginx/hazora"
-set "REMOTE_TMP=/tmp/hazora-dist"
+set "REMOTE_TMP=/var/tmp/hazora-dist"
 set "REMOTE_CONF=/etc/nginx/conf.d/hazora.conf"
 REM ------------------------------------------------------------
 
