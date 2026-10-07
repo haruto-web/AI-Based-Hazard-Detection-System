@@ -40,6 +40,46 @@ describe('YOLOv8 output parsing', () => {
     expect(result[0].box.width).toBeCloseTo(20);
   });
 
+  it('maps letterboxed model coordinates back to the source frame', () => {
+    const values = new Float32Array(channels);
+    values[0] = 320;
+    values[1] = 320;
+    values[2] = 100;
+    values[3] = 100;
+    values[5] = 0.9;
+
+    const result = parseYoloOutput(
+      values,
+      [1, channels, 1],
+      640,
+      480,
+      { scaleX: 1, scaleY: 1, padX: 0, padY: 80 }
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0].label).toBe('Safety Vest');
+    expect(result[0].box).toEqual({ x: 270, y: 190, width: 100, height: 100 });
+  });
+
+  it('detects pixel coordinates even when the first candidate center is near zero', () => {
+    const values = new Float32Array(channels * 2);
+    values[0] = 0.5;
+    values[1] = 0.5;
+    values[2] = 0.2;
+    values[3] = 0.4;
+    values[4] = 0.1;
+    values[channels] = 320;
+    values[channels + 1] = 320;
+    values[channels + 2] = 64;
+    values[channels + 3] = 64;
+    values[channels + 4] = 0.9;
+
+    const result = parseYoloOutput(values, [1, 2, channels], 640, 480);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].box).toEqual({ x: 288, y: 216, width: 64, height: 48 });
+  });
+
   it('drops candidates below the confidence threshold', () => {
     const values = new Float32Array(channels);
     values[0] = 0.5;

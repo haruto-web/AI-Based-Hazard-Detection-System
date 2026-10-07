@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createIncidentReport } from '../utils/incidents';
-import { sendHazardEmail } from '../utils/hazardEmail';
+import { HAZARD_EMAIL_COOLDOWN_MS, sendHazardEmail } from '../utils/hazardEmail';
 import { useNotifications } from '../context/NotificationContext';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -13,6 +13,7 @@ import {
   drawPersonResult,
   drawPpeResult,
   groupPpeDetections,
+  loadFaceDetectionModel,
   loadPpeDetectionModels,
 } from '../AI/LM_detection/ppeDetection';
 import { buildHazardReport } from '../AI/LM_detection/hazardDetails';
@@ -59,17 +60,17 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
   // Tracks people across frames so each person alerts once per missing item
   // (no per-frame flooding). Keyed alert timestamps live on each track.
   const trackerRef = useRef(null);
-  if (!trackerRef.current) trackerRef.current = createPersonTracker();
+  if (trackerRef.current === null) trackerRef.current = createPersonTracker();
   // Per-track, per-item confirmation-frame counter: `${trackId}:${item}` -> n.
   const confirmFramesRef = useRef({});
   // Per-track, per-item last-alert time for the 5-min re-alert safety net.
   const lastAlertRef = useRef({});
+  const lastEmailSentRef = useRef({});
   const { addNotification } = useNotifications();
   const { user } = useAuth();
   const userId = user?.uid;
   const [ppeModel, setPpeModel] = useState(null);
   const [personModel, setPersonModel] = useState(null);
-  const [faceModel, setFaceModel] = useState(null);
   const [loading, setLoading] = useState(false);
   const [detecting, setDetecting] = useState(false);
   const [error, setError] = useState(null);
@@ -87,6 +88,8 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
   });
   const modelLoadPromiseRef = useRef(null);
   const modelLoadStartedRef = useRef(false);
+  const faceModelRef = useRef(null);
+  const faceModelLoadPromiseRef = useRef(null);
 
   async function loadModels() {
     if (modelLoadPromiseRef.current) return modelLoadPromiseRef.current;
@@ -100,7 +103,6 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
         const models = await loadPpeDetectionModels();
         setPpeModel(models.ppeModel);
         setPersonModel(models.personModel);
-        setFaceModel(models.faceModel);
         return models;
       } catch (err) {
         console.error('Failed to load detection models:', err);
@@ -115,6 +117,23 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
     modelLoadPromiseRef.current = promise;
     return promise;
   }
+
+  const getFaceModel = useCallback(async () => {
+    if (faceModelRef.current) return faceModelRef.current;
+    if (!faceModelLoadPromiseRef.current) {
+      faceModelLoadPromiseRef.current = loadFaceDetectionModel()
+        .then((model) => {
+          faceModelRef.current = model;
+          return model;
+        })
+        .catch((err) => {
+          faceModelLoadPromiseRef.current = null;
+          console.warn('Face model failed to load; face capture disabled:', err?.message);
+          return null;
+        });
+    }
+    return faceModelLoadPromiseRef.current;
+  }, []);
 
   const detectFrame = useCallback(async () => {
     if (inferenceInFlightRef.current || !ppeModel || !canvasRef.current) return;
@@ -142,17 +161,9 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
       canvas.height = image.naturalHeight;
       ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
 
-      // Keep a clean (un-annotated) copy of this frame for face crops, since
-      // the main canvas will get detection boxes drawn over it below.
-      const rawCanvas = document.createElement('canvas');
-      rawCanvas.width = canvas.width;
-      rawCanvas.height = canvas.height;
-      rawCanvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
-
-      const [ppeObjects, persons, faces] = await Promise.all([
+      const [ppeObjects, persons] = await Promise.all([
         detectPpeObjects({ ppeModel, canvas }),
         personModel ? detectPersons({ personModel, canvas }) : Promise.resolve([]),
-        faceModel ? detectFaces({ faceModel, canvas }) : Promise.resolve([]),
       ]);
 
       // One group per detected person (falls back to spatial clustering when
@@ -206,6 +217,27 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
 
       // Lazily capture the annotated frame only once per frame if any alert fires.
       let cachedImageData = null;
+      let rawCanvas = null;
+      let facesPromise = null;
+      const getRawCanvas = () => {
+        if (!rawCanvas) {
+          rawCanvas = document.createElement('canvas');
+          rawCanvas.width = canvas.width;
+          rawCanvas.height = canvas.height;
+          rawCanvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
+        }
+        return rawCanvas;
+      };
+      const getFaces = () => {
+        if (!facesPromise) {
+          facesPromise = getFaceModel().then((faceModel) => (
+            faceModel
+              ? detectFaces({ faceModel, canvas: getRawCanvas() })
+              : []
+          ));
+        }
+        return facesPromise;
+      };
       const captureFrame = () => {
         if (cachedImageData === null) {
           try {
@@ -220,32 +252,20 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
       // Evaluate EACH PERSON separately. A person alerts once per missing item;
       // it only re-alerts after REALERT_INTERVAL_MS or if they left and returned
       // (a returning person gets a fresh track, so alerted state is cleared).
-      groups.forEach((group) => {
+      for (const group of groups) {
         const track = group._track;
-        if (!track || group.missing.length === 0) return;
+        if (!track || group.missing.length === 0) continue;
 
-        group.missing.forEach((item) => {
+        for (const item of group.missing) {
           const key = `${track.id}:${item}`;
 
           // Require the violation to persist a few frames before alerting.
           confirmFramesRef.current[key] = (confirmFramesRef.current[key] || 0) + 1;
-          if (confirmFramesRef.current[key] < PPE_FRAMES_TO_REPORT) return;
+          if (confirmFramesRef.current[key] < PPE_FRAMES_TO_REPORT) continue;
 
           const lastAlert = lastAlertRef.current[key] || 0;
           const alreadyAlerted = tracker.hasAlerted(track, item);
           const withinRealertWindow = now - lastAlert < REALERT_INTERVAL_MS;
-
-          // Skip if this person was already alerted for this item recently.
-          if (alreadyAlerted && withinRealertWindow) return;
-
-          tracker.markAlerted(track, item);
-          lastAlertRef.current[key] = now;
-
-          // Crop the violator's face from the clean frame for evidence (not
-          // identification). Empty string if no face is confidently found.
-          const faceData = group.person
-            ? cropFaceForPerson(rawCanvas, group.person.box, faces)
-            : '';
 
           const report = buildHazardReport({
             item,
@@ -255,17 +275,41 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
             cameraSource: cameraIP,
           });
 
+          const lastEmailSentAt = lastEmailSentRef.current[key] || 0;
+          if (now - lastEmailSentAt >= HAZARD_EMAIL_COOLDOWN_MS) {
+            lastEmailSentRef.current[key] = now;
+            sendHazardEmail({
+              user,
+              hazardType: report.hazardType,
+              site: siteForIncident,
+              cameraSource: cameraIP,
+              severity: report.severity,
+            }).then((result) => {
+              if (!result.sent) {
+                console.warn('Hazard email was not sent:', result.reason);
+              }
+            }).catch((error) => {
+              console.error('Hazard email request failed unexpectedly:', error);
+            });
+          }
+
+          // Skip if this person was already alerted for this item recently.
+          if (alreadyAlerted && withinRealertWindow) continue;
+
+          tracker.markAlerted(track, item);
+          lastAlertRef.current[key] = now;
+
+          // Crop the violator's face from the clean frame for evidence (not
+          // identification). Empty string if no face is confidently found.
+          const faces = await getFaces();
+          const faceData = group.person
+            ? cropFaceForPerson(getRawCanvas(), group.person.box, faces)
+            : '';
+
           addNotification({
             violationType: report.hazardType,
             cameraSource: `Site: ${siteForIncident} | Camera: ${cameraIP}`,
             message: report.notificationMessage,
-            severity: report.severity,
-          });
-          sendHazardEmail({
-            user,
-            hazardType: report.hazardType,
-            site: siteForIncident,
-            cameraSource: cameraIP,
             severity: report.severity,
           });
           createIncidentReport({
@@ -289,8 +333,8 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
             faceData,
             site: siteForIncident,
           });
-        });
-      });
+        }
+      }
 
       // Reset confirmation streaks for tracks/items no longer violating so a
       // brief flicker doesn't accumulate toward an alert.
@@ -309,15 +353,20 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
     } finally {
       inferenceInFlightRef.current = false;
     }
-  }, [ppeModel, personModel, faceModel, cameraIP, addNotification, userId, user, siteLocation]);
+  }, [ppeModel, personModel, cameraIP, addNotification, userId, user, siteLocation, getFaceModel]);
 
   useEffect(() => {
     if (detecting && ppeModel && isConnected && cameraIP) {
-      detectFrame();
-      timerRef.current = setInterval(detectFrame, 700);
+      timerRef.current = setTimeout(() => {
+        detectFrame();
+        timerRef.current = setInterval(detectFrame, 700);
+      }, 0);
     }
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        clearInterval(timerRef.current);
+      }
     };
   }, [detecting, ppeModel, isConnected, cameraIP, detectFrame]);
 
@@ -349,6 +398,7 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
       trackerRef.current.reset();
       confirmFramesRef.current = {};
       lastAlertRef.current = {};
+      lastEmailSentRef.current = {};
       return;
     }
 

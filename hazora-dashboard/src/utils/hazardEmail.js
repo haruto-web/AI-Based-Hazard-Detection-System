@@ -1,6 +1,6 @@
 import { auth } from '../firebase';
 
-export const HAZARD_EMAIL_COOLDOWN_MS = 60 * 1000;
+export const HAZARD_EMAIL_COOLDOWN_MS = 2 * 1000;
 
 export function isHazardEmailCooldownActive(lastSentAt, now = Date.now()) {
   const timestamp = Number(lastSentAt);
@@ -10,8 +10,8 @@ export function isHazardEmailCooldownActive(lastSentAt, now = Date.now()) {
 export async function sendHazardEmail({ user, hazardType, site, cameraSource, severity }) {
   const endpoint = import.meta.env.VITE_HAZARD_EMAIL_ENDPOINT?.trim();
 
-  if (!user?.email || !user.emailVerified) {
-    return { sent: false, reason: 'email_not_verified' };
+  if (!user?.uid) {
+    return { sent: false, reason: 'not_authenticated' };
   }
   if (!endpoint) {
     return { sent: false, reason: 'email_not_configured' };

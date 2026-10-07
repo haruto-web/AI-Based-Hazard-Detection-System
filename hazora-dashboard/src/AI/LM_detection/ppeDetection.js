@@ -65,21 +65,15 @@ export async function loadPpeDetectionModels() {
 
   const personModel = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
 
-  // Face detector for evidence face-crops on violations. Non-fatal if it fails
-  // to load (detection still works, just without face crops).
-  let faceModel = null;
-  try {
-    faceModel = await blazeface.load();
-  } catch (err) {
-    console.warn('Face model failed to load; face capture disabled:', err?.message);
-  }
-
   return {
     ppeModel,
     personModel,
-    faceModel,
     ppeLabels: PPE_LABELS,
   };
+}
+
+export async function loadFaceDetectionModel() {
+  return blazeface.load();
 }
 
 // Detect faces in the current canvas. Returns boxes in canvas pixel space.
@@ -174,15 +168,7 @@ function nonMaximumSuppression(detections) {
   return kept;
 }
 
-// YOLOv8 boxes can come out normalized (0..1) or in input-pixel space (0..640).
-// Detect which by sampling a coordinate, then scale to the canvas accordingly.
-function resolveCoordinateScale(sampleValue, canvasSize, inputSize) {
-  const normalized = sampleValue <= 1.5;
-  const base = normalized ? canvasSize : canvasSize / inputSize;
-  return { normalized, base };
-}
-
-export function parseYoloOutput(values, shape, canvasWidth, canvasHeight) {
+export function parseYoloOutput(values, shape, canvasWidth, canvasHeight, imageTransform = null) {
   const channels = 4 + PPE_LABELS.length;
   // Layout A (channels-first): [1, channels, N]  -> value at [c * N + i]
   // Layout B (channels-last):  [1, N, channels]  -> value at [i * channels + c]
@@ -193,9 +179,16 @@ export function parseYoloOutput(values, shape, canvasWidth, canvasHeight) {
     ? values[channel * candidateCount + index]
     : values[index * channels + channel]);
 
-  // Sample a center-x from the first candidate to decide normalized vs pixel space.
-  const scaleX = resolveCoordinateScale(getValue(0, 0), canvasWidth, PPE_INPUT_SIZE);
-  const scaleY = resolveCoordinateScale(getValue(1, 0), canvasHeight, PPE_INPUT_SIZE);
+  // Early YOLO candidates can have near-zero centers even when all coordinates
+  // are in pixels, so inspect all candidates rather than guessing from index 0.
+  let maxCoordinate = 0;
+  for (let index = 0; index < candidateCount; index += 1) {
+    for (let channel = 0; channel < 4; channel += 1) {
+      const value = Math.abs(getValue(channel, index));
+      if (Number.isFinite(value)) maxCoordinate = Math.max(maxCoordinate, value);
+    }
+  }
+  const normalized = maxCoordinate <= 1.5;
 
   const detections = [];
   for (let index = 0; index < candidateCount; index += 1) {
@@ -211,21 +204,41 @@ export function parseYoloOutput(values, shape, canvasWidth, canvasHeight) {
 
     if (bestClass < 0 || bestScore < PPE_CONFIDENCE_THRESHOLD) continue;
 
-    const centerX = getValue(0, index) * scaleX.base;
-    const centerY = getValue(1, index) * scaleY.base;
-    const width = getValue(2, index) * scaleX.base;
-    const height = getValue(3, index) * scaleY.base;
+    const coordinateScale = normalized ? PPE_INPUT_SIZE : 1;
+    const centerX = getValue(0, index) * coordinateScale;
+    const centerY = getValue(1, index) * coordinateScale;
+    const width = getValue(2, index) * coordinateScale;
+    const height = getValue(3, index) * coordinateScale;
+    const inputX1 = centerX - width / 2;
+    const inputY1 = centerY - height / 2;
+    const inputX2 = centerX + width / 2;
+    const inputY2 = centerY + height / 2;
+    const x1 = imageTransform
+      ? (inputX1 - imageTransform.padX) / imageTransform.scaleX
+      : inputX1 * canvasWidth / PPE_INPUT_SIZE;
+    const y1 = imageTransform
+      ? (inputY1 - imageTransform.padY) / imageTransform.scaleY
+      : inputY1 * canvasHeight / PPE_INPUT_SIZE;
+    const x2 = imageTransform
+      ? (inputX2 - imageTransform.padX) / imageTransform.scaleX
+      : inputX2 * canvasWidth / PPE_INPUT_SIZE;
+    const y2 = imageTransform
+      ? (inputY2 - imageTransform.padY) / imageTransform.scaleY
+      : inputY2 * canvasHeight / PPE_INPUT_SIZE;
+    const x = Math.max(0, Math.min(canvasWidth, x1));
+    const y = Math.max(0, Math.min(canvasHeight, y1));
+    const right = Math.max(0, Math.min(canvasWidth, x2));
+    const bottom = Math.max(0, Math.min(canvasHeight, y2));
+    if (right <= x || bottom <= y) continue;
 
-    const x = Math.max(0, centerX - width / 2);
-    const y = Math.max(0, centerY - height / 2);
     detections.push({
       label: PPE_LABELS[bestClass],
       score: bestScore,
       box: {
         x,
         y,
-        width: Math.min(canvasWidth, centerX + width / 2) - x,
-        height: Math.min(canvasHeight, centerY + height / 2) - y,
+        width: right - x,
+        height: bottom - y,
       },
     });
   }
@@ -253,13 +266,30 @@ function modelExpectsChannelsFirst(ppeModel) {
 export async function detectPpeObjects({ ppeModel, canvas }) {
   if (!ppeModel || !canvas) return [];
 
+  const scale = Math.min(PPE_INPUT_SIZE / canvas.width, PPE_INPUT_SIZE / canvas.height);
+  const resizedWidth = Math.max(1, Math.round(canvas.width * scale));
+  const resizedHeight = Math.max(1, Math.round(canvas.height * scale));
+  const padX = Math.floor((PPE_INPUT_SIZE - resizedWidth) / 2);
+  const padY = Math.floor((PPE_INPUT_SIZE - resizedHeight) / 2);
+  const imageTransform = {
+    scaleX: resizedWidth / canvas.width,
+    scaleY: resizedHeight / canvas.height,
+    padX,
+    padY,
+  };
   const channelsFirst = modelExpectsChannelsFirst(ppeModel);
   const input = tf.tidy(() => {
-    const nhwc = tf.browser.fromPixels(canvas)
-      .resizeBilinear([PPE_INPUT_SIZE, PPE_INPUT_SIZE])
+    const resized = tf.browser.fromPixels(canvas)
+      .resizeBilinear([resizedHeight, resizedWidth])
       .toFloat()
-      .div(255)
-      .expandDims(0);
+      .div(255);
+    const padBottom = PPE_INPUT_SIZE - resizedHeight - padY;
+    const padRight = PPE_INPUT_SIZE - resizedWidth - padX;
+    const nhwc = tf.pad(
+      resized,
+      [[padY, padBottom], [padX, padRight], [0, 0]],
+      114 / 255
+    ).expandDims(0);
     // Transpose [1,H,W,3] -> [1,3,H,W] when the model wants NCHW.
     return channelsFirst ? nhwc.transpose([0, 3, 1, 2]) : nhwc;
   });
@@ -290,7 +320,7 @@ export async function detectPpeObjects({ ppeModel, canvas }) {
       outputShapeLogged = true;
     }
     const values = await output.data();
-    return parseYoloOutput(values, shape, canvas.width, canvas.height);
+    return parseYoloOutput(values, shape, canvas.width, canvas.height, imageTransform);
   } finally {
     output?.dispose?.();
     transposed?.dispose?.();
