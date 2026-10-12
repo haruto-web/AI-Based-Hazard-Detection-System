@@ -21,8 +21,8 @@ import { buildHazardReport } from '../AI/LM_detection/hazardDetails';
 // A violation must persist across this many consecutive frames before it
 // alerts, so a single-frame model miss (flicker) doesn't fire a false alarm.
 const PPE_FRAMES_TO_REPORT = 5;
-const DETECTION_INTERVAL_MS = 1200;
-const PERSON_DETECTION_INTERVAL_MS = 8000;
+const DETECTION_INTERVAL_MS = 3000;
+const PERSON_DETECTION_INTERVAL_MS = 20000;
 
 export function buildStreamUrl(value) {
   if (!value) return '';
@@ -372,10 +372,7 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
         timerRef.current = setTimeout(async () => {
           if (cancelled) return;
           await detectFrame();
-          if (!cancelled) {
-            const nextDelay = Math.max(0, DETECTION_INTERVAL_MS - (Date.now() - lastDetectionStartedAtRef.current));
-            scheduleNext(nextDelay);
-          }
+          if (!cancelled) scheduleNext(DETECTION_INTERVAL_MS);
         }, delay);
       };
       scheduleNext(0);
