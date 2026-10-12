@@ -22,13 +22,24 @@ export default function GalleryPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [severityFilter, setSeverityFilter] = useState('all');
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [deleteError, setDeleteError] = useState('');
+  const [deleting, setDeleting] = useState(false);
 
   async function handleDelete(capture) {
-    await deleteIncident(capture.id);
-    setConfirmDelete(null);
-    // Close the detail modal if the deleted item was open.
-    setSelected((current) => (current && current.id === capture.id ? null : current));
-    setIncidents((current) => current.filter((incident) => incident.id !== capture.id));
+    setDeleting(true);
+    setDeleteError('');
+    try {
+      await deleteIncident(capture.id);
+      setConfirmDelete(null);
+      // Close the detail modal if the deleted item was open.
+      setSelected((current) => (current && current.id === capture.id ? null : current));
+      setIncidents((current) => current.filter((incident) => incident.id !== capture.id));
+    } catch (error) {
+      console.error('Could not delete gallery capture:', error);
+      setDeleteError(error.message || 'Could not delete this capture. Please try again.');
+    } finally {
+      setDeleting(false);
+    }
   }
 
   useEffect(() => {
@@ -156,9 +167,16 @@ export default function GalleryPage() {
                   role="button"
                   tabIndex={0}
                   aria-label="Delete capture"
-                  onClick={(e) => { e.stopPropagation(); setConfirmDelete(capture); }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setDeleteError('');
+                    setConfirmDelete(capture);
+                  }}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); setConfirmDelete(capture); }
+                    if (e.key === 'Enter' || e.key === ' ') {                     e.preventDefault();
+                    e.stopPropagation();
+                    setDeleteError('');
+                    setConfirmDelete(capture); }
                   }}
                 >
                   🗑
@@ -225,7 +243,10 @@ export default function GalleryPage() {
               <div className="gallery-modal-actions">
                 <button
                   className="gallery-delete-btn"
-                  onClick={() => setConfirmDelete(selected)}
+                  onClick={() => {
+                    setDeleteError('');
+                    setConfirmDelete(selected);
+                  }}
                 >
                   Delete capture
                 </button>
@@ -244,9 +265,25 @@ export default function GalleryPage() {
               This permanently removes the <strong>{confirmDelete.hazardType}</strong> capture from
               {' '}{confirmDelete.date} • {confirmDelete.time}. This cannot be undone.
             </p>
+            {deleteError && <p className="gallery-delete-error" role="alert">{deleteError}</p>}
             <div className="gallery-confirm-actions">
-              <button className="gallery-confirm-cancel" onClick={() => setConfirmDelete(null)}>Cancel</button>
-              <button className="gallery-confirm-delete" onClick={() => handleDelete(confirmDelete)}>Delete</button>
+              <button
+                className="gallery-confirm-cancel"
+                onClick={() => {
+                  setConfirmDelete(null);
+                  setDeleteError('');
+                }}
+                disabled={deleting}
+              >
+                Cancel
+              </button>
+              <button
+                className="gallery-confirm-delete"
+                onClick={() => handleDelete(confirmDelete)}
+                disabled={deleting}
+              >
+                {deleting ? 'Deleting...' : 'Delete'}
+              </button>
             </div>
           </div>
         </div>

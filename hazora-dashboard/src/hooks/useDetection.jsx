@@ -23,10 +23,6 @@ import { buildHazardReport } from '../AI/LM_detection/hazardDetails';
 const PPE_FRAMES_TO_REPORT = 5;
 const DETECTION_INTERVAL_MS = 350;
 const PERSON_DETECTION_INTERVAL_MS = 2400;
-// Safety-net re-alert window: even a continuously-present, already-alerted
-// person can re-alert at most once per this interval (prevents true silence
-// on a long-standing violation, without per-frame spam).
-const REALERT_INTERVAL_MS = 60 * 1000; // 1 minute
 
 export function buildStreamUrl(value) {
   if (!value) return '';
@@ -59,14 +55,12 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
   const canvasRef = useRef(null);
   const timerRef = useRef(null);
   const inferenceInFlightRef = useRef(false);
-  // Tracks people across frames so each person alerts once per missing item
-  // (no per-frame flooding). Keyed alert timestamps live on each track.
+  // Tracks people across frames so each person creates one incident per
+  // missing item during a continuous violation.
   const trackerRef = useRef(null);
   if (trackerRef.current === null) trackerRef.current = createPersonTracker();
   // Per-track, per-item confirmation-frame counter: `${trackId}:${item}` -> n.
   const confirmFramesRef = useRef({});
-  // Per-track, per-item last-alert time for the 5-min re-alert safety net.
-  const lastAlertRef = useRef({});
   const lastEmailSentRef = useRef({});
   const cachedPersonsRef = useRef([]);
   const lastPersonDetectionAtRef = useRef(0);
@@ -262,9 +256,9 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
         return cachedImageData;
       };
 
-      // Evaluate EACH PERSON separately. A person alerts once per missing item;
-      // it only re-alerts after REALERT_INTERVAL_MS or if they left and returned
-      // (a returning person gets a fresh track, so alerted state is cleared).
+      // Evaluate each person separately. A persistent violation creates one
+      // incident per tracked occurrence; a new incident is created if the
+      // person leaves and later returns.
       for (const group of groups) {
         const track = group._track;
         if (!track || group.missing.length === 0) continue;
@@ -276,9 +270,7 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
           confirmFramesRef.current[key] = (confirmFramesRef.current[key] || 0) + 1;
           if (confirmFramesRef.current[key] < PPE_FRAMES_TO_REPORT) continue;
 
-          const lastAlert = lastAlertRef.current[key] || 0;
           const alreadyAlerted = tracker.hasAlerted(track, item);
-          const withinRealertWindow = now - lastAlert < REALERT_INTERVAL_MS;
 
           const report = buildHazardReport({
             item,
@@ -306,11 +298,11 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
             });
           }
 
-          // Skip if this person was already alerted for this item recently.
-          if (alreadyAlerted && withinRealertWindow) continue;
+          // Keep a single incident for an ongoing tracked violation. Email
+          // repeats are independently rate-limited above.
+          if (alreadyAlerted) continue;
 
           tracker.markAlerted(track, item);
-          lastAlertRef.current[key] = now;
 
           // Crop the violator's face from the clean frame for evidence (not
           // identification). Empty string if no face is confidently found.
@@ -419,7 +411,6 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
       // Clear tracking state so a fresh session starts clean.
       trackerRef.current.reset();
       confirmFramesRef.current = {};
-      lastAlertRef.current = {};
       lastEmailSentRef.current = {};
       return;
     }

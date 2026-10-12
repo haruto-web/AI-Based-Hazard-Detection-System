@@ -5,6 +5,7 @@ import {
   getAutoBrightnessScale,
   parseYoloOutput,
   groupPpeDetections,
+  createPersonTracker,
   PPE_CONFIDENCE_THRESHOLD,
   PPE_LABELS,
 } from '../AI/LM_detection/ppeDetection';
@@ -187,6 +188,22 @@ describe('PPE grouping', () => {
     // Vest detected -> vest required and satisfied; helmet still required + missing.
     expect(groups[0].hasVest).toBe(true);
     expect(groups[0].missing).toContain('Safety Helmet');
+  });
+});
+
+describe('Person alert tracking', () => {
+  it('does not re-alert for a continuous violation, but resets after the person leaves', () => {
+    const tracker = createPersonTracker();
+    const group = { person: { box: { x: 10, y: 10, width: 40, height: 80 } } };
+    const first = tracker.assign([group])[0];
+    tracker.markAlerted(first._track, 'Safety Helmet');
+
+    const nextFrame = tracker.assign([group])[0];
+    expect(tracker.hasAlerted(nextFrame._track, 'Safety Helmet')).toBe(true);
+
+    for (let frame = 0; frame < 9; frame += 1) tracker.assign([]);
+    const returned = tracker.assign([group])[0];
+    expect(tracker.hasAlerted(returned._track, 'Safety Helmet')).toBe(false);
   });
 });
 

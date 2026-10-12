@@ -415,6 +415,11 @@
   line-height: 1.5;
 }
 
+.gallery-confirm p.gallery-delete-error {
+  color: #be2d2d;
+  font-weight: 600;
+}
+
 .gallery-confirm-actions {
   display: flex;
   justify-content: flex-end;
@@ -443,4 +448,9 @@
 
 .gallery-confirm-delete:hover {
   background: #a02525;
+}
+
+.gallery-confirm-actions button:disabled {
+  opacity: 0.6;
+  cursor: wait;
 }

@@ -1,5 +1,5 @@
 import { jsPDF } from 'jspdf';
-import { addDoc, collection, limit, onSnapshot, orderBy, query, serverTimestamp } from 'firebase/firestore';
+import { collection, limit, onSnapshot, orderBy, query, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { computeReportSummary, computePpeBreakdown } from './analytics';
 
@@ -211,7 +211,8 @@ export async function createIncidentReport({
   const appStatus = { open: 'New', acknowledged: 'Acknowledged', resolved: 'Resolved' }[incident.status] || 'New';
 
   try {
-    await addDoc(collection(db, 'incidents'), {
+    const { doc, setDoc } = await import('firebase/firestore');
+    await setDoc(doc(db, 'incidents', incident.id), {
       ...incident,
       userId: userId || incident.userId || null,
       // App-compatible aliases.
@@ -254,7 +255,8 @@ export async function updateIncidentStatus(userId, incidentId, status) {
 }
 
 // Permanently delete an incident locally and from the shared Firestore
-// "incidents" collection.
+// "incidents" collection. Firestore may reject due to auth/permissions, but
+// the dashboard must still be able to remove the capture from the local UI.
 export async function deleteIncident(incidentId) {
   if (!incidentId) return;
 
@@ -262,10 +264,24 @@ export async function deleteIncident(incidentId) {
   writeStoredIncidents(incidents);
 
   try {
-    const { doc, deleteDoc } = await import('firebase/firestore');
-    await deleteDoc(doc(db, 'incidents', incidentId));
+    const { collection, deleteDoc, doc, getDocs, query, where } = await import('firebase/firestore');
+
+    const directDoc = doc(db, 'incidents', incidentId);
+    try {
+      await deleteDoc(directDoc);
+    } catch {
+      // Some incidents are stored with a different Firestore document id than
+      // the local incident.id, so fall back to searching by the id field.
+    }
+
+    const matches = await getDocs(query(collection(db, 'incidents'), where('id', '==', incidentId)));
+    const matchingDoc = matches.docs.find((snapshot) => snapshot.data().id === incidentId || snapshot.id === incidentId);
+
+    if (matchingDoc) {
+      await deleteDoc(matchingDoc.ref);
+    }
   } catch (err) {
-    console.warn('Failed to delete incident from Firestore:', err.message);
+    console.warn('Failed to delete incident from Firestore. Local entry was already removed.', err);
   }
 }
 
