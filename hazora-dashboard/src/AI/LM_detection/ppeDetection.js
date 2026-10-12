@@ -6,7 +6,12 @@ import * as blazeface from '@tensorflow-models/blazeface';
 export const PPE_MODEL_URL = '/models/ppe/yolov8n.tflite';
 export const PPE_LABELS = ['Safety Helmet', 'Safety Vest', 'Safety Shoes'];
 export const PPE_INPUT_SIZE = 640;
-export const PPE_CONFIDENCE_THRESHOLD = 0.77;
+export const PPE_CONFIDENCE_THRESHOLD = 0.56;
+export const PPE_CLASS_CONFIDENCE_THRESHOLDS = {
+  'Safety Helmet': 0.56,
+  'Safety Vest': 0.56,
+  'Safety Shoes': 0.56,
+};
 export const PPE_IOU_THRESHOLD = 0.70;
 const TFLITE_WASM_PATH = '/tflite/';
 
@@ -202,7 +207,8 @@ export function parseYoloOutput(values, shape, canvasWidth, canvasHeight, imageT
       }
     }
 
-    if (bestClass < 0 || bestScore < PPE_CONFIDENCE_THRESHOLD) continue;
+    const classThreshold = PPE_CLASS_CONFIDENCE_THRESHOLDS[PPE_LABELS[bestClass]] ?? PPE_CONFIDENCE_THRESHOLD;
+    if (bestClass < 0 || bestScore < classThreshold) continue;
 
     const coordinateScale = normalized ? PPE_INPUT_SIZE : 1;
     const centerX = getValue(0, index) * coordinateScale;
