@@ -21,8 +21,8 @@ import { buildHazardReport } from '../AI/LM_detection/hazardDetails';
 // A violation must persist across this many consecutive frames before it
 // alerts, so a single-frame model miss (flicker) doesn't fire a false alarm.
 const PPE_FRAMES_TO_REPORT = 5;
-const DETECTION_INTERVAL_MS = 350;
-const PERSON_DETECTION_INTERVAL_MS = 2400;
+const DETECTION_INTERVAL_MS = 1200;
+const PERSON_DETECTION_INTERVAL_MS = 8000;
 
 export function buildStreamUrl(value) {
   if (!value) return '';
@@ -64,6 +64,7 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
   const lastEmailSentRef = useRef({});
   const cachedPersonsRef = useRef([]);
   const lastPersonDetectionAtRef = useRef(0);
+  const lastDetectionStartedAtRef = useRef(0);
   const { addNotification } = useNotifications();
   const { user } = useAuth();
   const userId = user?.uid;
@@ -134,7 +135,11 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
   }, []);
 
   const detectFrame = useCallback(async () => {
+    const now = Date.now();
     if (inferenceInFlightRef.current || !ppeModel || !canvasRef.current) return;
+    if (now - lastDetectionStartedAtRef.current < DETECTION_INTERVAL_MS) return;
+
+    lastDetectionStartedAtRef.current = now;
 
     const captureUrl = buildCaptureUrl(cameraIP);
     if (!captureUrl) {
@@ -365,8 +370,12 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
       let cancelled = false;
       const scheduleNext = (delay) => {
         timerRef.current = setTimeout(async () => {
+          if (cancelled) return;
           await detectFrame();
-          if (!cancelled) scheduleNext(DETECTION_INTERVAL_MS);
+          if (!cancelled) {
+            const nextDelay = Math.max(0, DETECTION_INTERVAL_MS - (Date.now() - lastDetectionStartedAtRef.current));
+            scheduleNext(nextDelay);
+          }
         }, delay);
       };
       scheduleNext(0);
