@@ -27,10 +27,10 @@ if errorlevel 1 (
     exit /b 1
 )
 
-REM Install dependencies only if they are missing.
-if not exist "node_modules" (
+REM Install dependencies if this is a fresh or incomplete setup.
+if not exist "node_modules\.bin\vite.cmd" (
     echo [setup] Installing dependencies - first run only...
-    call npm install
+    call npm install --legacy-peer-deps
     if errorlevel 1 (
         echo [ERROR] npm install failed. See the errors above.
         echo.
