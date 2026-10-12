@@ -34,16 +34,54 @@ export default function DetectionViewerContent({
 
       {detecting && (
         <>
-          <div className="detection-stats">
-            <span className="stat person-stat">Persons: {detections.persons}</span>
-            <span className="stat helmet-stat">Helmets: {detections.helmets}</span>
-            <span className="stat vest-stat">Vests: {detections.vests}</span>
-            <span className="stat shoes-stat">Shoes: {detections.shoes}</span>
-            <span className="stat compliant-stat">Compliant: {detections.compliant}</span>
-            <span className={`stat violation-stat${detections.violations > 0 ? ' active' : ''}`}>
-              Violations: {detections.violations}
-            </span>
+          <div className="detection-panel">
+            <div className="ppe-status-bar" aria-live="polite">
+              <div className={`ppe-pill ${detections.helmets > 0 ? 'good' : 'warn'}`}>
+                <span className="ppe-pill-title">Helmet</span>
+                <span className="ppe-pill-state">{detections.helmets > 0 ? 'Detected' : 'Missing'}</span>
+              </div>
+              <div className={`ppe-pill ${detections.vests > 0 ? 'good' : 'warn'}`}>
+                <span className="ppe-pill-title">Vest</span>
+                <span className="ppe-pill-state">{detections.vests > 0 ? 'Detected' : 'Missing'}</span>
+              </div>
+              <div className={`ppe-pill ${detections.shoes > 0 ? 'good' : 'warn'}`}>
+                <span className="ppe-pill-title">Shoes</span>
+                <span className="ppe-pill-state">{detections.shoes > 0 ? 'Detected' : 'Missing'}</span>
+              </div>
+            </div>
+
+            <div className="detection-summary-grid">
+              <div className="summary-card">
+                <span className="summary-label">Persons</span>
+                <strong className="summary-value">{detections.persons}</strong>
+              </div>
+              <div className="summary-card">
+                <span className="summary-label">Helmets</span>
+                <strong className="summary-value">{detections.helmets}</strong>
+              </div>
+              <div className="summary-card">
+                <span className="summary-label">Vests</span>
+                <strong className="summary-value">{detections.vests}</strong>
+              </div>
+              <div className="summary-card">
+                <span className="summary-label">Shoes</span>
+                <strong className="summary-value">{detections.shoes}</strong>
+              </div>
+            </div>
+
+            <div className="detection-risk-grid">
+              <div className="risk-box">
+                <span className="risk-label">Compliant</span>
+                <strong>{detections.compliant}</strong>
+              </div>
+              <div className="risk-box hazard-box">
+                <span className="risk-label">Violations</span>
+                <strong>{detections.violations}</strong>
+              </div>
+            </div>
+
           </div>
+
           {status && <p className="detection-status">{status}</p>}
           <canvas ref={canvasRef} className="detection-canvas" />
         </>

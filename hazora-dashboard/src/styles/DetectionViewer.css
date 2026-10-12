@@ -9,21 +9,46 @@
 .detection-toggle:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .detection-error { color: var(--error); font-size: 0.8rem; margin-bottom: 0.5rem; }
-.detection-stats { display: flex; gap: 1rem; margin-bottom: 0.75rem; }
-.stat { font-size: 0.85rem; padding: 0.4rem 0.75rem; border-radius: 6px; background: var(--bg-secondary); }
-.person-stat { color: var(--success); }
-.face-stat { color: var(--accent); }
-.helmet-stat { color: var(--success); }
-.vest-stat { color: #f59e0b; }
-.shoes-stat { color: #38bdf8; }
-.compliant-stat { color: var(--success); }
-.violation-stat { color: var(--text-secondary); }
-.violation-stat.active { color: #ffffff; background: var(--error); }
-.no-helmet-stat { color: var(--text-secondary); }
-.no-helmet-stat.active { color: #ffffff; background: var(--error); }
+
+.detection-panel { display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 0.75rem; }
+.ppe-status-bar { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.5rem; }
+.ppe-pill { display: flex; flex-direction: column; gap: 0.15rem; padding: 0.45rem 0.55rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-secondary); }
+.ppe-pill.good { border-color: rgba(39, 174, 96, 0.6); background: rgba(39, 174, 96, 0.12); }
+.ppe-pill.warn { border-color: rgba(255, 142, 84, 0.7); background: rgba(255, 142, 84, 0.08); }
+.ppe-pill-title { font-size: 0.7rem; color: var(--text-secondary); }
+.ppe-pill-state { font-size: 0.75rem; font-weight: 700; color: var(--text-primary); }
+.detection-summary-grid,
+.detection-risk-grid,
+.detection-debug-grid { display: grid; gap: 0.6rem; }
+.detection-summary-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.detection-risk-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.detection-debug-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+.summary-card,
+.risk-box,
+.detection-debug-box { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 0.55rem 0.65rem; }
+.summary-label,
+.risk-label { display: block; font-size: 0.68rem; color: var(--text-secondary); margin-bottom: 0.18rem; }
+.summary-value,
+.risk-box strong { font-size: 1rem; color: var(--text-primary); }
+.risk-box.hazard-box strong { color: #ff8d55; }
+.debug-header { margin-bottom: 0.4rem; color: var(--text-primary); }
+.detection-debug-box em { color: var(--text-secondary); font-style: normal; }
 
 .detection-source-img { display: none; }
 .detection-stream-source { display: none; }
-.detection-canvas { width: 100%; height: auto; border-radius: 8px; border: 1px solid var(--border); }
+.detection-canvas {
+  display: none;
+  width: 100%;
+  height: auto;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
 
 .detection-status { font-size: 0.78rem; color: var(--text-secondary); margin: 0 0 0.5rem; }
+
+@media (max-width: 600px) {
+  .detection-summary-grid,
+  .detection-risk-grid,
+  .detection-debug-grid { grid-template-columns: 1fr 1fr; }
+}
