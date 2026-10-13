@@ -21,7 +21,7 @@ import { buildHazardReport } from '../AI/LM_detection/hazardDetails';
 // A violation must persist across this many consecutive frames before it
 // alerts, so a single-frame model miss (flicker) doesn't fire a false alarm.
 const PPE_FRAMES_TO_REPORT = 5;
-const DETECTION_INTERVAL_MS = 10000;
+const DETECTION_INTERVAL_MS = 2000;
 const PERSON_DETECTION_INTERVAL_MS = 60000;
 const AI_SERVICE_URL = (import.meta.env.VITE_AI_API_URL || '').replace(/\/$/, '');
 
@@ -201,33 +201,13 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
       }
 
       const payload = await response.json();
-      const detections = payload?.detections || {};
-      const hasValidBackendResult = Boolean(
-        payload &&
-          typeof payload === 'object' &&
-          payload.ok !== false &&
-          detections &&
-          typeof detections === 'object' &&
-          Object.keys(detections).length > 0
-      );
-      console.log('[Hazora AI backend result]', {
-        cameraIP,
-        payload,
-        summary: {
-          persons: detections.persons || 0,
-          helmets: detections.helmets || 0,
-          vests: detections.vests || 0,
-          shoes: detections.shoes || 0,
-          noHelmets: detections.noHelmets || 0,
-          noVests: detections.noVests || 0,
-          noShoes: detections.noShoes || 0,
-          compliant: detections.compliant || 0,
-          violations: detections.violations || 0,
-        },
-        hasValidBackendResult,
-      });
-
-      const captureFrameImage = await captureFaceEvidence(captureUrl);
+      if (!payload || typeof payload !== 'object' || payload.ok !== true) {
+        throw new Error('AI service returned an invalid detection response');
+      }
+      const hasDetectionSummary = payload.detections &&
+        typeof payload.detections === 'object' &&
+        !Array.isArray(payload.detections);
+      const detections = hasDetectionSummary ? payload.detections : {};
       if (detections) {
         setDetections({
           persons: detections.persons || 0,
@@ -250,6 +230,13 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
         detections.noVests ? { item: 'Safety Vest', count: detections.noVests } : null,
         detections.noShoes ? { item: 'Safety Shoes', count: detections.noShoes } : null,
       ].filter(Boolean);
+      const needsEvidence = backendIssues.some((issue) => {
+        const key = `${cameraIP}:${issue.item}`;
+        return Date.now() - (backendAlertRef.current[key] || 0) >= 60000;
+      });
+      const captureFrameImage = needsEvidence
+        ? await captureFaceEvidence(captureUrl)
+        : '';
 
       for (const issue of backendIssues) {
         const key = `${cameraIP}:${issue.item}`;
@@ -332,13 +319,16 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
         `violations=${detections.violations || 0}`,
       ].join(' • ');
 
-      setStatus(`${payload?.status || 'AI analysis running on backend'} • ${backendSummary}`);
-      return hasValidBackendResult;
+      const backendStatus = hasDetectionSummary
+        ? payload.status || 'AI analysis running on backend'
+        : 'AI service returned no detection counts';
+      setStatus(`${backendStatus} • ${backendSummary}`);
+      return true;
     } catch (error) {
       console.warn('Backend AI detection unavailable, falling back to browser model:', error?.message || error);
       return false;
     }
-  }, [addNotification, cameraIP, siteLocation, user, userId]);
+  }, [addNotification, cameraIP, captureFaceEvidence, siteLocation, user, userId]);
 
   const detectFrame = useCallback(async () => {
     const now = Date.now();
@@ -349,7 +339,7 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
       lastDetectionStartedAtRef.current = now;
       const handled = await detectViaBackend();
       if (handled) return;
-      setStatus('Backend saw no PPE objects; falling back to local person/PPE detection');
+      setStatus('Backend unavailable; falling back to local person/PPE detection');
     }
 
     if (!ppeModel) {
@@ -586,7 +576,7 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
     } finally {
       inferenceInFlightRef.current = false;
     }
-  }, [ppeModel, personModel, cameraIP, addNotification, userId, user, siteLocation, getFaceModel]);
+  }, [ppeModel, personModel, cameraIP, addNotification, userId, user, siteLocation, getFaceModel, detectViaBackend]);
 
   useEffect(() => {
     if (detecting && isConnected && cameraIP && (AI_SERVICE_URL || ppeModel)) {
@@ -615,7 +605,7 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
 
   useEffect(() => {
     let idleId = null;
-    if (!isConnected || !cameraIP || modelLoadStartedRef.current) return undefined;
+    if (AI_SERVICE_URL || !isConnected || !cameraIP || modelLoadStartedRef.current) return undefined;
 
     const scheduleLoad = () => loadModels().catch(() => {});
     if ('requestIdleCallback' in window) {
