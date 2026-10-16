@@ -7,7 +7,9 @@ import {
   groupPpeDetections,
   createPersonTracker,
   PPE_CONFIDENCE_THRESHOLD,
+  PPE_DETECTION_GRACE_MS,
   PPE_LABELS,
+  stabilizePpeDetections,
 } from '../AI/LM_detection/ppeDetection';
 
 describe('TensorFlow model packages', () => {
@@ -188,6 +190,88 @@ describe('PPE grouping', () => {
     // Vest detected -> vest required and satisfied; helmet still required + missing.
     expect(groups[0].hasVest).toBe(true);
     expect(groups[0].missing).toContain('Safety Helmet');
+  });
+});
+
+describe('PPE detection stability', () => {
+  it('keeps recently detected PPE present across a single missed frame', () => {
+    const history = {};
+    const first = stabilizePpeDetections({
+      persons: 1,
+      helmets: 1,
+      vests: 1,
+      shoes: 0,
+      noHelmets: 0,
+      noVests: 0,
+      noShoes: 0,
+    }, history, 'camera-a', 1000);
+    const missed = stabilizePpeDetections({
+      persons: 1,
+      helmets: 0,
+      vests: 0,
+      shoes: 0,
+      noHelmets: 1,
+      noVests: 1,
+      noShoes: 0,
+    }, history, 'camera-a', 3000);
+
+    expect(first.helmets).toBe(1);
+    expect(missed.helmets).toBe(1);
+    expect(missed.vests).toBe(1);
+    expect(missed.noHelmets).toBe(0);
+    expect(missed.noVests).toBe(0);
+    expect(missed.noShoes).toBe(0);
+  });
+
+  it('expires remembered detections after the short grace period', () => {
+    const history = {};
+    stabilizePpeDetections({
+      persons: 1,
+      helmets: 1,
+      vests: 0,
+      shoes: 0,
+      noHelmets: 0,
+      noVests: 1,
+      noShoes: 0,
+    }, history, 'camera-a', 1000);
+    const expired = stabilizePpeDetections({
+      persons: 1,
+      helmets: 0,
+      vests: 0,
+      shoes: 0,
+      noHelmets: 1,
+      noVests: 1,
+      noShoes: 0,
+    }, history, 'camera-a', 1000 + PPE_DETECTION_GRACE_MS + 1);
+
+    expect(expired.helmets).toBe(0);
+    expect(expired.noHelmets).toBe(1);
+    expect(expired.noVests).toBe(1);
+  });
+
+  it('keeps detection history isolated per camera', () => {
+    const history = {};
+    stabilizePpeDetections({
+      persons: 1,
+      helmets: 1,
+      vests: 0,
+      shoes: 0,
+      noHelmets: 0,
+      noVests: 1,
+      noShoes: 0,
+    }, history, 'camera-a', 1000);
+    const otherCamera = stabilizePpeDetections({
+      persons: 1,
+      helmets: 0,
+      vests: 0,
+      shoes: 0,
+      noHelmets: 1,
+      noVests: 1,
+      noShoes: 0,
+    }, history, 'camera-b', 2000);
+
+    expect(otherCamera.helmets).toBe(0);
+    expect(otherCamera.noHelmets).toBe(1);
   });
 });
 

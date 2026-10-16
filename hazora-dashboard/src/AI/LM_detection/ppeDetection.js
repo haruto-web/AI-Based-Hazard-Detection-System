@@ -13,6 +13,7 @@ export const PPE_CLASS_CONFIDENCE_THRESHOLDS = {
   'Safety Shoes': 0.56,
 };
 export const PPE_IOU_THRESHOLD = 0.70;
+export const PPE_DETECTION_GRACE_MS = 5000;
 const TFLITE_WASM_PATH = '/tflite/';
 
 // Logged once so the real YOLOv8 output tensor layout can be verified in the console.
@@ -250,6 +251,44 @@ export function parseYoloOutput(values, shape, canvasWidth, canvasHeight, imageT
   }
 
   return nonMaximumSuppression(detections);
+}
+
+export function stabilizePpeDetections(
+  detections,
+  lastSeenByCamera,
+  cameraIP,
+  now = Date.now(),
+  graceMs = PPE_DETECTION_GRACE_MS,
+) {
+  const stable = { ...detections };
+  const cameraHistory = lastSeenByCamera[cameraIP] || (lastSeenByCamera[cameraIP] = {});
+  const personCount = Number(detections.persons) || 0;
+  const equipment = [
+    ['helmets', 'noHelmets'],
+    ['vests', 'noVests'],
+    ['shoes', 'noShoes'],
+  ];
+
+  equipment.forEach(([presentKey, missingKey]) => {
+    const presentCount = Number(detections[presentKey]) || 0;
+    if (presentCount > 0) {
+      cameraHistory[presentKey] = { count: presentCount, seenAt: now };
+    } else {
+      const lastSeen = cameraHistory[presentKey];
+      if (lastSeen && now - lastSeen.seenAt <= graceMs) {
+        stable[presentKey] = Math.min(lastSeen.count, personCount || lastSeen.count);
+      }
+    }
+
+    if (stable[presentKey] > 0 && Number(detections[missingKey]) > 0) {
+      stable[missingKey] = Math.max(
+        0,
+        Math.min(Number(detections[missingKey]), personCount - stable[presentKey]),
+      );
+    }
+  });
+
+  return stable;
 }
 
 // Some YOLOv8 TFLite exports expect NCHW ([1,3,H,W]) instead of the NHWC

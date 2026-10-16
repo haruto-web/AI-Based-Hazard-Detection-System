@@ -2,6 +2,10 @@
 
 This service runs PPE and person analysis outside the browser so the dashboard can keep streaming smoothly. It loads the PPE checkpoint and the repository's COCO `yolov8n.pt` checkpoint to count people even when no PPE is detected. Set `AI_MODEL_PATH` or `AI_PERSON_MODEL_PATH` to override either model path.
 
+## PPE model accuracy
+
+The checked-in training data currently contains 18 training images and 1 validation image. This is too little validation data to establish reliable helmet, vest, or shoe recall across different people, camera angles, and lighting. The dashboard temporarily keeps a recent PPE detection for up to 5 seconds to avoid a one-frame flicker, but improving general accuracy requires adding varied, correctly labeled images and retraining the PPE model.
+
 ## Start
 
 ```bash

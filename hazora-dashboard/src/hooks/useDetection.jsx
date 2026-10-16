@@ -15,6 +15,7 @@ import {
   groupPpeDetections,
   loadFaceDetectionModel,
   loadPpeDetectionModels,
+  stabilizePpeDetections,
 } from '../AI/LM_detection/ppeDetection';
 import { buildHazardReport } from '../AI/LM_detection/hazardDetails';
 
@@ -64,6 +65,7 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
   const confirmFramesRef = useRef({});
   const lastEmailSentRef = useRef({});
   const backendAlertRef = useRef({});
+  const backendPpePresenceRef = useRef({});
   const cachedPersonsRef = useRef([]);
   const lastPersonDetectionAtRef = useRef(0);
   const lastDetectionStartedAtRef = useRef(0);
@@ -207,7 +209,13 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
       const hasDetectionSummary = payload.detections &&
         typeof payload.detections === 'object' &&
         !Array.isArray(payload.detections);
-      const detections = hasDetectionSummary ? payload.detections : {};
+      const detections = hasDetectionSummary
+        ? stabilizePpeDetections(
+          payload.detections,
+          backendPpePresenceRef.current,
+          cameraIP,
+        )
+        : {};
       if (detections) {
         setDetections({
           persons: detections.persons || 0,
