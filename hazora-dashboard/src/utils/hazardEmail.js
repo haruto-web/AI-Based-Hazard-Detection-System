@@ -7,7 +7,7 @@ export function isHazardEmailCooldownActive(lastSentAt, now = Date.now()) {
   return Number.isFinite(timestamp) && timestamp > 0 && now - timestamp < HAZARD_EMAIL_COOLDOWN_MS;
 }
 
-export async function sendHazardEmail({ user, hazardType, site, cameraSource, severity }) {
+async function submitHazardEmail(user, payload) {
   const endpoint = import.meta.env.VITE_HAZARD_EMAIL_ENDPOINT?.trim();
 
   if (!user?.uid) {
@@ -25,13 +25,7 @@ export async function sendHazardEmail({ user, hazardType, site, cameraSource, se
       method: 'POST',
       mode: 'no-cors',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({
-        idToken,
-        hazardType,
-        site,
-        cameraSource,
-        severity,
-      }),
+      body: JSON.stringify({ ...payload, idToken }),
     });
   } catch (error) {
     console.warn('Hazard email could not be sent:', error.message);
@@ -39,4 +33,24 @@ export async function sendHazardEmail({ user, hazardType, site, cameraSource, se
   }
 
   return { sent: true, reason: 'request_submitted' };
+}
+
+export function sendHazardEmail({ user, hazardType, site, cameraSource, severity }) {
+  return submitHazardEmail(user, {
+    hazardType,
+    site,
+    cameraSource,
+    severity,
+  });
+}
+
+export function sendHazardEmailTest(user) {
+  if (!user?.email || !user.emailVerified) {
+    return Promise.resolve({ sent: false, reason: 'email_not_verified' });
+  }
+
+  return submitHazardEmail(user, {
+    action: 'test_hazard_email',
+    testRecipient: user.email,
+  });
 }

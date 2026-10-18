@@ -10,9 +10,7 @@ import '../styles/GalleryPage.css';
 
 const SITE_NOT_SET = 'Site location not set';
 
-// Gallery shows auto-captured violation snapshots. Every incident that carries
-// an annotated image (from the live stream auto-capture) becomes a card with
-// its picture, timestamp, site, and the AI hazard description.
+// Incident captures show images attached to detected incidents from supported streams.
 const SEVERITY_FILTERS = ['all', 'low', 'medium', 'high', 'critical'];
 
 export default function GalleryPage() {
@@ -91,9 +89,9 @@ export default function GalleryPage() {
     <div className="gallery-page">
       <div className="gallery-header">
         <div>
-          <h2 className="gallery-title">Violation Gallery</h2>
+          <h2 className="gallery-title">Incident Captures</h2>
           <p className="gallery-subtitle">
-            Snapshots automatically captured when a PPE violation is detected on a live stream.
+            Images captured when an incident is detected from a web or app stream.
           </p>
         </div>
         <span className="gallery-count">
@@ -113,7 +111,7 @@ export default function GalleryPage() {
             placeholder="Search by hazard, site, camera, or date…"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            aria-label="Search violation captures"
+            aria-label="Search incident captures"
           />
           {searchQuery && (
             <button className="gallery-search-clear" onClick={() => setSearchQuery('')} aria-label="Clear search">✕</button>

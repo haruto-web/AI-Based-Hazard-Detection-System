@@ -3,6 +3,7 @@ import { reload, sendEmailVerification, sendPasswordResetEmail } from 'firebase/
 import { collection, doc, getDoc, getDocs, limit, query, setDoc, where } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
+import { sendHazardEmailTest } from '../utils/hazardEmail';
 import '../styles/ProfilePage.css';
 
 export default function ProfilePage() {
@@ -21,6 +22,7 @@ export default function ProfilePage() {
   const [resettingPassword, setResettingPassword] = useState(false);
   const [emailVerified, setEmailVerified] = useState(user.emailVerified);
   const [verificationSending, setVerificationSending] = useState(false);
+  const [testingHazardEmail, setTestingHazardEmail] = useState(false);
   const [message, setMessage] = useState(null);
 
   // Load profile from Firestore
@@ -160,6 +162,36 @@ export default function ProfilePage() {
     }
   }
 
+  async function handleTestHazardEmail() {
+    setMessage(null);
+    setTestingHazardEmail(true);
+    try {
+      const result = await sendHazardEmailTest(user);
+      if (!result.sent) {
+        const reasonMessages = {
+          email_not_configured: 'Hazard email is not configured.',
+          email_not_verified: 'Verify your account email before requesting a test.',
+          not_authenticated: 'Please sign in again before requesting a test.',
+        };
+        setMessage({
+          type: 'error',
+          text: reasonMessages[result.reason] || 'The test request could not be submitted.',
+        });
+        return;
+      }
+
+      setMessage({
+        type: 'success',
+        text: `A test request was submitted for ${user.email}. Check that inbox and its spam folder. No hazard incident was created.`,
+      });
+    } catch (err) {
+      setMessage({ type: 'error', text: 'Could not submit the hazard email test. Please try again.' });
+      console.warn('Hazard email test request failed:', err.message);
+    } finally {
+      setTestingHazardEmail(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="profile-page">
@@ -231,6 +263,20 @@ export default function ProfilePage() {
             </div>
             <button type="button" onClick={handleVerifyEmail} disabled={verificationSending}>
               {verificationSending ? 'Please wait…' : emailVerified ? 'Check status' : 'Send verification link'}
+            </button>
+          </div>
+
+          <div className="profile-email-test">
+            <div>
+              <strong>Test hazard email</strong>
+              <p>Sends one test message to your verified account email only. It does not create an incident or notify other users.</p>
+            </div>
+            <button
+              type="button"
+              onClick={handleTestHazardEmail}
+              disabled={!emailVerified || testingHazardEmail}
+            >
+              {testingHazardEmail ? 'Submitting…' : 'Send test email'}
             </button>
           </div>
 

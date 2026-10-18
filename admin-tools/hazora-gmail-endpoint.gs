@@ -1,6 +1,8 @@
 // Configure Script Properties: FIREBASE_WEB_API_KEY, FIREBASE_PROJECT_ID,
-// FIRESTORE_DATABASE_ID, and HAZORA_DASHBOARD_URL.
+// FIRESTORE_DATABASE_ID, and HAZORA_DASHBOARD_URL. Test requests go only to
+// the verified caller's email and never use the normal alert fan-out.
 const HAZARD_EMAIL_COOLDOWN_MS = 60 * 1000;
+const HAZARD_EMAIL_TEST_COOLDOWN_MS = 60 * 1000;
 const HAZARD_EMAIL_ROLES = [
   'Site Safety Officer',
   'Site Safety Practitioner',
@@ -47,6 +49,51 @@ function handleRequest(event) {
       const databaseId = properties.getProperty('FIRESTORE_DATABASE_ID') || 'hazora';
       if (!projectId) throw new Error('FIREBASE_PROJECT_ID script property is missing');
       const accessToken = ScriptApp.getOAuthToken();
+
+      if (payload.action === 'test_hazard_email') {
+        const testRecipient = safeText(payload.testRecipient, '', 254).toLowerCase();
+        const callerEmail = safeText(user.email, '', 254).toLowerCase();
+        if (!callerEmail || testRecipient !== callerEmail) {
+          return jsonResponse({ ok: false, sent: false, reason: 'test_recipient_mismatch' });
+        }
+
+        const profile = getFirestoreDocument(projectId, databaseId, `users/${user.localId}`, accessToken);
+        const callerRole = profile?.fields?.role?.stringValue;
+        if (profile?.fields?.approvalStatus?.stringValue !== 'approved' ||
+            !HAZARD_EMAIL_ROLES.includes(callerRole)) {
+          return jsonResponse({ ok: false, sent: false, reason: 'approved_role_required' });
+        }
+
+        const cooldownKey = `hazard_email_test_last_sent_${user.localId}`;
+        const lastSentAt = Number(properties.getProperty(cooldownKey)) || 0;
+        if (lastSentAt > 0 && now - lastSentAt < HAZARD_EMAIL_TEST_COOLDOWN_MS) {
+          return jsonResponse({ ok: false, sent: false, reason: 'cooldown' });
+        }
+
+        try {
+          GmailApp.sendEmail(
+            callerEmail,
+            'HAZORA email delivery test',
+            [
+              'This is a test of HAZORA hazard email delivery.',
+              '',
+              'No hazard was detected, no incident was created, and no other recipients were contacted.',
+              `Requested: ${new Date(now).toLocaleString()}`,
+            ].join('\n'),
+            { name: 'HAZORA Safety Alerts' },
+          );
+        } catch (error) {
+          console.error(`Could not send hazard email test to ${user.localId}: ${error.message}`);
+          return jsonResponse({ ok: false, sent: false, reason: 'send_failed' });
+        }
+        try {
+          properties.setProperty(cooldownKey, String(now));
+        } catch (error) {
+          console.error(`Test email was sent but its cooldown could not be recorded: ${error.message}`);
+        }
+        return jsonResponse({ ok: true, sent: true, sentCount: 1, recipientCount: 1, reason: 'sent' });
+      }
+
       const recipients = getVerifiedRoleRecipients(projectId, databaseId, accessToken);
       if (!recipients.some((recipient) => recipient.uid === user.localId)) {
         return jsonResponse({ ok: false, sent: false, reason: 'approved_role_required' });

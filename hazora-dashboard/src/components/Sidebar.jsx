@@ -4,7 +4,7 @@ import '../styles/Sidebar.css';
 const NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: 'grid' },
   { id: 'streams', label: 'Live Streams', icon: 'camera' },
-  { id: 'gallery', label: 'Gallery', icon: 'gallery' },
+  { id: 'gallery', label: 'Incident Captures', icon: 'gallery' },
   { id: 'reports', label: 'Reports', icon: 'file' },
   { id: 'messages', label: 'Messages', icon: 'message' },
   { id: 'accounts', label: 'Mobile Accounts', icon: 'users' },
