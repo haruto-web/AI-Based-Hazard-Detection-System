@@ -10,7 +10,7 @@ from urllib.request import Request, urlopen
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from PIL import Image
+from PIL import Image, ImageOps, ImageStat
 from ultralytics import YOLO
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -19,6 +19,14 @@ MODEL_PATH = Path(os.environ.get("AI_MODEL_PATH") or DEFAULT_MODEL_PATH)
 DEFAULT_PERSON_MODEL_PATH = ROOT_DIR / "yolov8n.pt"
 PERSON_MODEL_PATH = Path(os.environ.get("AI_PERSON_MODEL_PATH") or DEFAULT_PERSON_MODEL_PATH)
 PERSON_CLASS_ID = 0
+PPE_CONFIDENCE_THRESHOLD = 0.35
+PPE_CLASS_CONFIDENCE_THRESHOLDS = {
+    "helmet": PPE_CONFIDENCE_THRESHOLD,
+    "vest": 0.20,
+    "shoe": PPE_CONFIDENCE_THRESHOLD,
+}
+LOW_LIGHT_MEAN_LUMINANCE = 80
+LOW_LIGHT_AUTOCONTRAST_CUTOFF = 1
 
 try:
     model = YOLO(str(MODEL_PATH))
@@ -41,7 +49,7 @@ else:
 async def lifespan(_: FastAPI):
     warmup_image = Image.new("RGB", (640, 480))
     if model is not None:
-        model(warmup_image, imgsz=640, conf=0.35, verbose=False)
+        model(warmup_image, imgsz=640, conf=0.20, verbose=False)
     if person_model is not None:
         person_model(
             warmup_image,
@@ -86,6 +94,23 @@ class DetectResponse(BaseModel):
     detections: Dict[str, Any]
     alerts: List[Dict[str, Any]] = []
     model: str
+
+
+def _prepare_ppe_image(image: Image.Image) -> Image.Image:
+    image = image.convert("RGB")
+    mean_luminance = ImageStat.Stat(image.convert("L")).mean[0]
+    if mean_luminance < LOW_LIGHT_MEAN_LUMINANCE:
+        return ImageOps.autocontrast(image, cutoff=LOW_LIGHT_AUTOCONTRAST_CUTOFF)
+    return image
+
+
+def _ppe_confidence_threshold(label: str) -> float:
+    lower_label = label.lower()
+    if "vest" in lower_label or "jacket" in lower_label:
+        return PPE_CLASS_CONFIDENCE_THRESHOLDS["vest"]
+    if "shoe" in lower_label or "boot" in lower_label:
+        return PPE_CLASS_CONFIDENCE_THRESHOLDS["shoe"]
+    return PPE_CLASS_CONFIDENCE_THRESHOLDS["helmet"]
 
 
 @app.get("/health")
@@ -177,6 +202,8 @@ def _summarize_results(result, people_result=None, frame_size=None) -> Dict[str,
         label_id = int(box.cls[0].item())
         label = str(names.get(label_id, label_id))
         confidence = float(box.conf[0].item())
+        if confidence < _ppe_confidence_threshold(label):
+            continue
         lower_label = label.lower()
 
         if "helmet" in lower_label or "hard hat" in lower_label:
@@ -263,7 +290,8 @@ async def detect(request: DetectRequest) -> Dict[str, Any]:
         else:
             image = _read_image_from_url(request.imageUrl)
 
-        result = model(image, imgsz=640, conf=0.35, verbose=False)[0]
+        image = _prepare_ppe_image(image)
+        result = model(image, imgsz=640, conf=0.20, verbose=False)[0]
         people_result = None
         if person_model is not None:
             people_result = person_model(

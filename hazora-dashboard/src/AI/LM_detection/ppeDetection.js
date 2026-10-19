@@ -8,9 +8,9 @@ export const PPE_LABELS = ['Safety Helmet', 'Safety Vest', 'Safety Shoes'];
 export const PPE_INPUT_SIZE = 640;
 export const PPE_CONFIDENCE_THRESHOLD = 0.56;
 export const PPE_CLASS_CONFIDENCE_THRESHOLDS = {
-  'Safety Helmet': 0.56,
-  'Safety Vest': 0.56,
-  'Safety Shoes': 0.56,
+  'Safety Helmet': PPE_CONFIDENCE_THRESHOLD,
+  'Safety Vest': 0.20,
+  'Safety Shoes': PPE_CONFIDENCE_THRESHOLD,
 };
 export const PPE_IOU_THRESHOLD = 0.70;
 export const PPE_DETECTION_GRACE_MS = 5000;

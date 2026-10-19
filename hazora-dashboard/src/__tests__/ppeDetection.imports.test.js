@@ -6,6 +6,7 @@ import {
   parseYoloOutput,
   groupPpeDetections,
   createPersonTracker,
+  PPE_CLASS_CONFIDENCE_THRESHOLDS,
   PPE_CONFIDENCE_THRESHOLD,
   PPE_DETECTION_GRACE_MS,
   PPE_LABELS,
@@ -89,7 +90,7 @@ describe('YOLOv8 output parsing', () => {
     values[1] = 0.5;
     values[2] = 0.2;
     values[3] = 0.4;
-    values[4] = 0.1; // below 0.40 threshold
+    values[4] = 0.1; // below every PPE confidence threshold
 
     const shape = [1, 1, channels];
     expect(parseYoloOutput(values, shape, 100, 100)).toHaveLength(0);
@@ -120,6 +121,25 @@ describe('YOLOv8 output parsing', () => {
 
     const shape = [1, 1, channels];
     expect(parseYoloOutput(values, shape, 100, 100)).toHaveLength(0);
+  });
+
+  it('uses the lower threshold for vests while retaining the helmet threshold', () => {
+    const vestValues = new Float32Array(channels);
+    vestValues[0] = 0.5;
+    vestValues[1] = 0.5;
+    vestValues[2] = 0.2;
+    vestValues[3] = 0.4;
+    vestValues[5] = PPE_CLASS_CONFIDENCE_THRESHOLDS['Safety Vest'];
+
+    const helmetValues = new Float32Array(channels);
+    helmetValues[0] = 0.5;
+    helmetValues[1] = 0.5;
+    helmetValues[2] = 0.2;
+    helmetValues[3] = 0.4;
+    helmetValues[4] = PPE_CONFIDENCE_THRESHOLD - 0.01;
+
+    expect(parseYoloOutput(vestValues, [1, 1, channels], 100, 100)).toHaveLength(1);
+    expect(parseYoloOutput(helmetValues, [1, 1, channels], 100, 100)).toHaveLength(0);
   });
 });
 

@@ -1,7 +1,9 @@
 import unittest
 from types import SimpleNamespace
 
-from app import _summarize_results
+from PIL import Image
+
+from app import _prepare_ppe_image, _summarize_results
 
 
 def detection(class_id, coordinates, confidence=0.9):
@@ -13,6 +15,47 @@ def detection(class_id, coordinates, confidence=0.9):
 
 
 class SummarizeResultsTests(unittest.TestCase):
+    def test_applies_the_lower_vest_confidence_threshold(self):
+        ppe_result = SimpleNamespace(
+            boxes=[detection(1, [40, 30, 60, 55], confidence=0.2)],
+            names={1: "Safety Vest"},
+        )
+
+        counts, _ = _summarize_results(ppe_result)
+
+        self.assertEqual(counts["vests"], 1)
+
+    def test_drops_detections_below_their_class_confidence_threshold(self):
+        ppe_result = SimpleNamespace(
+            boxes=[
+                detection(0, [40, 10, 60, 25], confidence=0.34),
+                detection(1, [40, 30, 60, 55], confidence=0.19),
+            ],
+            names={0: "Safety Helmet", 1: "Safety Vest"},
+        )
+
+        counts, alerts = _summarize_results(ppe_result)
+
+        self.assertEqual(counts["helmets"], 0)
+        self.assertEqual(counts["vests"], 0)
+        self.assertEqual(alerts, [])
+
+    def test_autocontrasts_underexposed_frames_only(self):
+        dark = Image.new("RGB", (100, 1))
+        dark.putdata([(value, value, value) for value in range(20, 70)])
+        normal = Image.new("RGB", (100, 1))
+        normal.putdata([(value, value, value) for value in range(100, 200)])
+        bright = Image.new("RGB", (100, 1))
+        bright.putdata([(value, value, value) for value in range(200, 250)])
+
+        prepared_dark = _prepare_ppe_image(dark)
+        prepared_normal = _prepare_ppe_image(normal)
+        prepared_bright = _prepare_ppe_image(bright)
+
+        self.assertEqual(prepared_dark.convert("L").getextrema(), (0, 255))
+        self.assertEqual(prepared_normal.tobytes(), normal.tobytes())
+        self.assertEqual(prepared_bright.tobytes(), bright.tobytes())
+
     def test_detects_missing_helmet_for_person_wearing_vest_without_false_shoes(self):
         ppe_result = SimpleNamespace(
             boxes=[detection(1, [40, 30, 60, 55])],
