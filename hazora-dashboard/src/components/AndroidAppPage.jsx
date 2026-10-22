@@ -67,7 +67,8 @@ export default function AndroidAppPage() {
 
         <div className="android-download-panel">
           <h3>Android application</h3>
-          <p>Use the QR code or open the download directly on your Android device.</p>
+          <p>First create and verify your website account, then wait for an administrator to approve it and enable mobile access. The mobile app uses the same account; separate app registration is not available.</p>
+          <p>Once access is enabled, use the QR code or open the download directly on your Android device.</p>
           {validDownloadUrl ? (
             <a className="android-download-button" href={validDownloadUrl} target="_blank" rel="noreferrer">
               Download HAZORA

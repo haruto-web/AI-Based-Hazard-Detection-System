@@ -21,6 +21,7 @@ import MobileAccountsPage from '../components/MobileAccountsPage';
 import ProfilePage from '../components/ProfilePage';
 import AboutPage from '../components/AboutPage';
 import AndroidAppPage from '../components/AndroidAppPage';
+import UserGuidePage from '../components/UserGuidePage';
 import Footer from '../components/Footer';
 import OnboardingTour from '../components/OnboardingTour';
 import '../styles/Dashboard.css';
@@ -184,6 +185,8 @@ export default function Dashboard() {
             {activeView === 'about' && <AboutPage />}
 
             {activeView === 'androidApp' && canAccess(userRole, 'androidApp') && <AndroidAppPage />}
+
+            {activeView === 'guide' && canAccess(userRole, 'guide') && <UserGuidePage />}
 
             {activeView === 'profile' && <ProfilePage />}
           </div>

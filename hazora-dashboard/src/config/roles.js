@@ -25,6 +25,7 @@ export const ROLE_ACCESS = {
     about: 'full',
     profile: 'full',
     androidApp: 'full',
+    guide: 'full',
   },
   'Site Safety Practitioner': {
     dashboard: 'view',
@@ -36,6 +37,7 @@ export const ROLE_ACCESS = {
     about: 'full',
     profile: 'full',
     androidApp: 'full',
+    guide: 'full',
   },
   'Site Project Engineer': {
     dashboard: 'view',
@@ -47,6 +49,7 @@ export const ROLE_ACCESS = {
     about: 'full',
     profile: 'full',
     androidApp: 'full',
+    guide: 'full',
   },
   'Site Construction Manager': {
     dashboard: 'full',
@@ -58,6 +61,7 @@ export const ROLE_ACCESS = {
     about: 'full',
     profile: 'full',
     androidApp: 'full',
+    guide: 'full',
   },
   'Safety Engineer - Head Office': {
     dashboard: 'full',
@@ -69,6 +73,7 @@ export const ROLE_ACCESS = {
     about: 'full',
     profile: 'full',
     androidApp: 'full',
+    guide: 'full',
   },
   'Safety Manager - Head Office': {
     dashboard: 'full',
@@ -80,6 +85,7 @@ export const ROLE_ACCESS = {
     about: 'full',
     profile: 'full',
     androidApp: 'full',
+    guide: 'full',
   },
   'HSE Head - Head Office': {
     dashboard: 'full',
@@ -91,6 +97,7 @@ export const ROLE_ACCESS = {
     about: 'full',
     profile: 'full',
     androidApp: 'full',
+    guide: 'full',
   },
 };
 
@@ -140,6 +147,7 @@ const DEFAULT_ACCESS = {
   about: 'full',
   profile: 'full',
   androidApp: 'full',
+  guide: 'full',
 };
 
 /**

@@ -9,11 +9,12 @@ const NAV_ITEMS = [
   { id: 'messages', label: 'Messages', icon: 'message' },
   { id: 'accounts', label: 'Mobile Accounts', icon: 'users' },
   { id: 'androidApp', label: 'Android App', icon: 'android' },
+  { id: 'guide', label: 'User Guide', icon: 'guide' },
   { id: 'about', label: 'About', icon: 'info' },
   { id: 'profile', label: 'Profile', icon: 'user' },
 ];
 
-const VALID_VIEWS = ['dashboard', 'streams', 'gallery', 'reports', 'messages', 'accounts', 'androidApp', 'about', 'profile'];
+const VALID_VIEWS = ['dashboard', 'streams', 'gallery', 'reports', 'messages', 'accounts', 'androidApp', 'guide', 'about', 'profile'];
 
 function NavIcon({ type }) {
   switch (type) {
@@ -87,6 +88,15 @@ function NavIcon({ type }) {
           <rect x="6" y="2" width="12" height="20" rx="2" />
           <line x1="10" y1="18" x2="14" y2="18" />
           <line x1="9" y1="5" x2="15" y2="5" />
+        </svg>
+      );
+    case 'guide':
+      return (
+        <svg viewBox="0 0 24 24">
+          <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21z" />
+          <path d="M4 5.5v13A2.5 2.5 0 0 1 6.5 16H20" />
+          <line x1="8" y1="7" x2="16" y2="7" />
+          <line x1="8" y1="10" x2="16" y2="10" />
         </svg>
       );
     default:

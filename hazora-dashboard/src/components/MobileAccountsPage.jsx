@@ -57,7 +57,7 @@ export default function MobileAccountsPage({ userRole }) {
         <div className="mobile-accounts-header">
           <div>
             <h2>Mobile Device Accounts</h2>
-            <p>Mobile access is prepared from approved website accounts. Users sign in to the app with the same verified email and password. To enable access for an existing website user, use Prepare access under Admin &gt; All website users.</p>
+            <p>A website account is required before mobile access can be enabled. Approve the website account and enable mobile access; the user then signs in to the app with the same verified email and password. To enable access for an existing website user, use Prepare access under Admin &gt; All website users.</p>
           </div>
         </div>
         {message && <div className={`mobile-message ${message.type}`}>{message.text}</div>}
