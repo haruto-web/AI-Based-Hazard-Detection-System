@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { signOut } from 'firebase/auth';
+import { sendPasswordResetEmail, signOut } from 'firebase/auth';
 import { collection, deleteDoc, doc, getDocs, limit, onSnapshot, orderBy, query, runTransaction, serverTimestamp, where, writeBatch } from 'firebase/firestore';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { auth, db } from '../firebase';
@@ -325,6 +325,33 @@ export default function AdminPage() {
     }
   }
 
+  async function resetUserPassword(account) {
+    const email = account.email?.trim();
+    if (!email) {
+      setMessage({ type: 'error', text: 'This account does not have an email address for password recovery.' });
+      return;
+    }
+
+    if (!window.confirm(`Send a password reset link to ${email}? The user will choose a new password using the link.`)) return;
+
+    setBusyUid(account.id);
+    setMessage(null);
+    try {
+      await sendPasswordResetEmail(auth, email);
+      setMessage({
+        type: 'success',
+        text: `Password reset link sent to ${email}. The user can choose a new password from that email.`,
+      });
+    } catch (error) {
+      setMessage({
+        type: 'error',
+        text: error.message || `Could not send a password reset link to ${email}.`,
+      });
+    } finally {
+      setBusyUid(null);
+    }
+  }
+
   async function handleLogout() {
     await signOut(auth);
     navigate('/login');
@@ -464,7 +491,7 @@ export default function AdminPage() {
             <div className="admin-section-heading">
               <div>
                 <h2>All website users</h2>
-                <p>Choose a site and save to update the website profile and any linked mobile account.</p>
+                <p>Update a user’s site or send a password reset link to their registered email. Passwords cannot be viewed.</p>
               </div>
             </div>
             {loading ? <p className="admin-empty">Loading website users…</p> : websiteUsers.length === 0 ? (
@@ -524,17 +551,31 @@ export default function AdminPage() {
                     </div>
                     <div><span>Status</span><strong>{account.approvalStatus || 'Existing account'}</strong></div>
                     <div><span>Registered</span><strong>{formatDate(account.createdAt)}</strong></div>
-                    {account.id !== user.uid &&
-                      account.email?.trim().toLowerCase() !== PROTECTED_ACCOUNT_EMAIL && (
+                    {(account.email ||
+                      (account.id !== user.uid &&
+                        account.email?.trim().toLowerCase() !== PROTECTED_ACCOUNT_EMAIL)) && (
                         <div className="admin-directory-actions">
-                          <button
-                            type="button"
-                            className="admin-delete"
-                            onClick={() => deleteUser(account)}
-                            disabled={busyUid === account.id}
-                          >
-                            {busyUid === account.id ? 'Removing…' : 'Remove profile'}
-                          </button>
+                          {account.email && (
+                            <button
+                              type="button"
+                              className="admin-password-reset"
+                              onClick={() => resetUserPassword(account)}
+                              disabled={busyUid === account.id}
+                            >
+                              {busyUid === account.id ? 'Please wait…' : 'Send password reset'}
+                            </button>
+                          )}
+                          {account.id !== user.uid &&
+                            account.email?.trim().toLowerCase() !== PROTECTED_ACCOUNT_EMAIL && (
+                              <button
+                                type="button"
+                                className="admin-delete"
+                                onClick={() => deleteUser(account)}
+                                disabled={busyUid === account.id}
+                              >
+                                {busyUid === account.id ? 'Removing…' : 'Remove profile'}
+                              </button>
+                            )}
                         </div>
                       )}
                     </article>
@@ -562,6 +603,18 @@ export default function AdminPage() {
                     <div><span>Role</span><strong>{account.role || 'Not assigned'}</strong></div>
                     <div><span>Site</span><strong>{account.site || 'Not assigned'}</strong></div>
                     <div><span>Status</span><strong>{account.mobileSetupStatus === 'setup_required' ? 'Setup required' : account.mobileSetupStatus === 'active' ? 'Active' : account.status || 'Unknown'}</strong></div>
+                    {account.email && (
+                      <div className="admin-directory-actions">
+                        <button
+                          type="button"
+                          className="admin-password-reset"
+                          onClick={() => resetUserPassword(account)}
+                          disabled={busyUid === account.id}
+                        >
+                          {busyUid === account.id ? 'Please wait…' : 'Send password reset'}
+                        </button>
+                      </div>
+                    )}
                   </article>
                 ))}
               </div>

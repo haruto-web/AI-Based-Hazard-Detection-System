@@ -1,17 +1,7 @@
 // Configure Script Properties: FIREBASE_WEB_API_KEY, FIREBASE_PROJECT_ID,
-// FIRESTORE_DATABASE_ID, and HAZORA_DASHBOARD_URL. Test requests go only to
-// the verified caller's email and never use the normal alert fan-out.
-const HAZARD_EMAIL_COOLDOWN_MS = 60 * 1000;
+// FIRESTORE_DATABASE_ID, HAZARD_EMAIL_TRIGGER_SECRET, and HAZORA_DASHBOARD_URL.
+// Test requests only email the verified caller; hazard fan-out comes from Functions.
 const HAZARD_EMAIL_TEST_COOLDOWN_MS = 60 * 1000;
-const HAZARD_EMAIL_ROLES = [
-  'Site Safety Officer',
-  'Site Safety Practitioner',
-  'Site Project Engineer',
-  'Site Construction Manager',
-  'Safety Engineer - Head Office',
-  'Safety Manager - Head Office',
-  'HSE Head - Head Office',
-];
 
 function doGet(e) {
   return handleRequest({
@@ -31,12 +21,16 @@ function handleRequest(event) {
       ? JSON.parse(event.postData.contents || '{}')
       : {};
     const payload = Object.keys(parameterPayload).length > 0 ? parameterPayload : postPayload;
+    const properties = PropertiesService.getScriptProperties();
+    if (payload.action === 'incident_created') {
+      return handleIncidentCreated(payload, properties);
+    }
+
     const user = verifyFirebaseUser(payload.idToken);
     if (!user || !user.emailVerified || !user.email) {
       return jsonResponse({ ok: false, reason: 'verified_account_required' });
     }
 
-    const properties = PropertiesService.getScriptProperties();
     if (payload.action === 'link_mobile_account') {
       return linkMobileAccount(payload, user, properties);
     }
@@ -45,23 +39,12 @@ function handleRequest(event) {
     lock.waitLock(10000);
     try {
       const now = Date.now();
-      const projectId = properties.getProperty('FIREBASE_PROJECT_ID');
-      const databaseId = properties.getProperty('FIRESTORE_DATABASE_ID') || 'hazora';
-      if (!projectId) throw new Error('FIREBASE_PROJECT_ID script property is missing');
-      const accessToken = ScriptApp.getOAuthToken();
 
       if (payload.action === 'test_hazard_email') {
         const testRecipient = safeText(payload.testRecipient, '', 254).toLowerCase();
         const callerEmail = safeText(user.email, '', 254).toLowerCase();
         if (!callerEmail || testRecipient !== callerEmail) {
           return jsonResponse({ ok: false, sent: false, reason: 'test_recipient_mismatch' });
-        }
-
-        const profile = getFirestoreDocument(projectId, databaseId, `users/${user.localId}`, accessToken);
-        const callerRole = profile?.fields?.role?.stringValue;
-        if (profile?.fields?.approvalStatus?.stringValue !== 'approved' ||
-            !HAZARD_EMAIL_ROLES.includes(callerRole)) {
-          return jsonResponse({ ok: false, sent: false, reason: 'approved_role_required' });
         }
 
         const cooldownKey = `hazard_email_test_last_sent_${user.localId}`;
@@ -94,62 +77,7 @@ function handleRequest(event) {
         return jsonResponse({ ok: true, sent: true, sentCount: 1, recipientCount: 1, reason: 'sent' });
       }
 
-      const recipients = getVerifiedRoleRecipients(projectId, databaseId, accessToken);
-      if (!recipients.some((recipient) => recipient.uid === user.localId)) {
-        return jsonResponse({ ok: false, sent: false, reason: 'approved_role_required' });
-      }
-
-      const hazardType = safeText(payload.hazardType, 'Possible PPE hazard', 100);
-      const severity = safeText(payload.severity, 'Not specified', 40);
-      const site = safeText(payload.site, 'Site location not set', 120);
-      const cameraSource = safeText(payload.cameraSource, 'Camera not specified', 120);
-      const dashboardUrl = properties.getProperty('HAZORA_DASHBOARD_URL');
-      const subject = `HAZORA alert: ${hazardType}`.slice(0, 150);
-      let sentCount = 0;
-      let cooldownCount = 0;
-      let failedCount = 0;
-
-      recipients.forEach((recipient) => {
-        const cooldownKey = `hazard_email_last_sent_${recipient.uid}`;
-        const lastSentAt = Number(properties.getProperty(cooldownKey)) || 0;
-        if (lastSentAt > 0 && now - lastSentAt < HAZARD_EMAIL_COOLDOWN_MS) {
-          cooldownCount += 1;
-          return;
-        }
-
-        const body = [
-          `Hello${recipient.displayName ? ` ${safeText(recipient.displayName, '', 80)}` : ''},`,
-          '',
-          `HAZORA detected a possible safety hazard: ${hazardType}.`,
-          `Severity: ${severity}`,
-          `Site: ${site}`,
-          `Camera: ${cameraSource}`,
-          `Detected: ${new Date(now).toLocaleString()}`,
-          '',
-          'Please open the HAZORA website or mobile app to review the incident and recommended precautions.',
-          ...(dashboardUrl ? [dashboardUrl] : []),
-          '',
-          'This is a reminder only. HAZORA limits hazard email alerts to one message per account every minute.',
-        ].join('\n');
-
-        try {
-          GmailApp.sendEmail(recipient.email, subject, body, { name: 'HAZORA Safety Alerts' });
-          properties.setProperty(cooldownKey, String(now));
-          sentCount += 1;
-        } catch (error) {
-          console.error(`Could not send hazard email to ${recipient.uid}: ${error.message}`);
-          failedCount += 1;
-        }
-      });
-
-      return jsonResponse({
-        ok: true,
-        sent: sentCount > 0,
-        sentCount,
-        failedCount,
-        recipientCount: recipients.length,
-        reason: sentCount > 0 ? 'sent' : cooldownCount > 0 ? 'cooldown' : 'no_eligible_recipients',
-      });
+      return jsonResponse({ ok: false, sent: false, reason: 'server_trigger_required' });
     } finally {
       lock.releaseLock();
     }
@@ -157,6 +85,92 @@ function handleRequest(event) {
     console.error(`Hazard email endpoint failed: ${error.message}`);
     return jsonResponse({ ok: false, reason: 'request_failed' });
   }
+}
+
+function handleIncidentCreated(payload, properties) {
+  const configuredSecret = properties.getProperty('HAZARD_EMAIL_TRIGGER_SECRET');
+  if (!configuredSecret || payload.triggerSecret !== configuredSecret) {
+    return jsonResponse({ ok: false, reason: 'invalid_trigger_secret' });
+  }
+
+  const incident = payload.incident;
+  const eventId = safeText(payload.eventId, '', 120);
+  if (!incident || typeof incident !== 'object' || !eventId ||
+      typeof incident.hazardType !== 'string' || !incident.hazardType.trim()) {
+    return jsonResponse({ ok: false, reason: 'invalid_incident' });
+  }
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const projectId = properties.getProperty('FIREBASE_PROJECT_ID');
+    if (!projectId) throw new Error('FIREBASE_PROJECT_ID script property is missing');
+    const recipients = getVerifiedRecipients(projectId, ScriptApp.getOAuthToken());
+    return jsonResponse(sendHazardAlert(incident, recipients, Date.now(), properties, eventId));
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function sendHazardAlert(payload, recipients, now, properties, eventId) {
+  const incident = payload.incident && typeof payload.incident === 'object'
+    ? payload.incident
+    : payload;
+  const hazardType = safeText(incident.hazardType, 'Possible PPE hazard', 100);
+  const severity = safeText(incident.severity, 'Not specified', 40);
+  const site = safeText(incident.site || incident.location, 'Site location not set', 120);
+  const cameraSource = safeText(incident.cameraSource, 'Camera not specified', 120);
+  const dashboardUrl = properties.getProperty('HAZORA_DASHBOARD_URL');
+  const subject = `HAZORA alert: ${hazardType}`.slice(0, 150);
+  const cache = CacheService.getScriptCache();
+  let sentCount = 0;
+  let skippedCount = 0;
+  let failedCount = 0;
+
+  recipients.forEach((recipient) => {
+    const deliveryKey = eventId ? `hazard_email_sent_${eventId}_${recipient.uid}` : '';
+    if (deliveryKey && cache.get(deliveryKey)) {
+      skippedCount += 1;
+      return;
+    }
+
+    const body = [
+      `Hello${recipient.displayName ? ` ${safeText(recipient.displayName, '', 80)}` : ''},`,
+      '',
+      `HAZORA detected a possible safety hazard: ${hazardType}.`,
+      `Severity: ${severity}`,
+      `Site: ${site}`,
+      `Camera: ${cameraSource}`,
+      `Detected: ${new Date(now).toLocaleString()}`,
+      '',
+      'Please open the HAZORA website or mobile app to review the incident and recommended precautions.',
+      ...(dashboardUrl ? [dashboardUrl] : []),
+    ].join('\n');
+
+    try {
+      GmailApp.sendEmail(recipient.email, subject, body, { name: 'HAZORA Safety Alerts' });
+      if (eventId) {
+        cache.put(deliveryKey, 'sent', 21600);
+      }
+      sentCount += 1;
+    } catch (error) {
+      console.error(`Could not send hazard email to ${recipient.uid}: ${error.message}`);
+      failedCount += 1;
+    }
+  });
+
+  return {
+    ok: true,
+    sent: sentCount > 0,
+    sentCount,
+    failedCount,
+    recipientCount: recipients.length,
+    reason: sentCount > 0
+      ? 'sent'
+      : skippedCount > 0
+        ? 'already_sent'
+        : 'no_verified_recipients',
+  };
 }
 
 function verifyFirebaseUser(idToken) {
@@ -191,41 +205,7 @@ function jsonResponse(value) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
-function getVerifiedRoleRecipients(projectId, databaseId, accessToken) {
-  const approvedRoles = new Set(HAZARD_EMAIL_ROLES);
-  const approvedUsers = new Map();
-  let firestorePageToken = '';
-
-  do {
-    const query = [`pageSize=1000`, firestorePageToken && `pageToken=${encodeURIComponent(firestorePageToken)}`]
-      .filter(Boolean)
-      .join('&');
-    const url = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}` +
-      `/databases/${encodeURIComponent(databaseId)}/documents/users?${query}`;
-    const response = UrlFetchApp.fetch(url, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-      muteHttpExceptions: true,
-    });
-    if (response.getResponseCode() !== 200) {
-      throw new Error(`Could not list user profiles: ${response.getContentText()}`);
-    }
-
-    const page = JSON.parse(response.getContentText());
-    (page.documents || []).forEach((document) => {
-      const fields = document.fields || {};
-      const role = fields.role?.stringValue;
-      if (fields.approvalStatus?.stringValue !== 'approved' || !approvedRoles.has(role)) return;
-
-      const uid = document.name.split('/').pop();
-      approvedUsers.set(uid, {
-        uid,
-        role,
-        displayName: fields.fullName?.stringValue || '',
-      });
-    });
-    firestorePageToken = page.nextPageToken || '';
-  } while (firestorePageToken);
-
+function getVerifiedRecipients(projectId, accessToken) {
   const verifiedRecipients = [];
   let authPageToken = '';
   do {
@@ -247,13 +227,11 @@ function getVerifiedRoleRecipients(projectId, databaseId, accessToken) {
 
     const page = JSON.parse(response.getContentText());
     (page.users || []).forEach((account) => {
-      const profile = approvedUsers.get(account.localId);
-      if (!profile || !account.emailVerified || !account.email) return;
-
+      if (!account.emailVerified || !account.email) return;
       verifiedRecipients.push({
-        ...profile,
+        uid: account.localId,
         email: account.email,
-        displayName: account.displayName || profile.displayName,
+        displayName: account.displayName || '',
       });
     });
     authPageToken = page.nextPageToken || '';

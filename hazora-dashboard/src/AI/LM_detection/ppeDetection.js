@@ -578,38 +578,3 @@ export function createPersonTracker({ iouMatchThreshold = 0.3, maxMissingFrames 
     },
   };
 }
-
-export function drawPpeResult(ctx, detection) {
-  const colorByLabel = {
-    'Safety Helmet': '#22c55e',
-    'Safety Vest': '#f59e0b',
-    'Safety Shoes': '#38bdf8',
-  };
-  const color = colorByLabel[detection.label] || '#ffffff';
-  const { x, y, width, height } = detection.box;
-  const label = `${detection.label} ${Math.round(detection.score * 100)}%`;
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 3;
-  ctx.strokeRect(x, y, width, height);
-  ctx.font = 'bold 13px Arial';
-  const textWidth = ctx.measureText(label).width;
-  ctx.fillStyle = color;
-  ctx.fillRect(x, Math.max(0, y - 22), textWidth + 10, 22);
-  ctx.fillStyle = '#000';
-  ctx.fillText(label, x + 5, Math.max(14, y - 6));
-}
-
-export function drawPersonResult(ctx, person) {
-  const { x, y, width, height } = person.box;
-  ctx.strokeStyle = '#00ff00';
-  ctx.lineWidth = 3;
-  ctx.strokeRect(x, y, width, height);
-
-  ctx.fillStyle = '#00ff00';
-  ctx.font = 'bold 14px Arial';
-  const label = `Person ${Math.round(person.score * 100)}%`;
-  const textWidth = ctx.measureText(label).width;
-  ctx.fillRect(x, Math.max(0, y - 22), textWidth + 10, 22);
-  ctx.fillStyle = '#000';
-  ctx.fillText(label, x + 5, Math.max(14, y - 6));
-}

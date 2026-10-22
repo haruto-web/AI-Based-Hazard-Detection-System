@@ -1,12 +1,5 @@
 import { auth } from '../firebase';
 
-export const HAZARD_EMAIL_COOLDOWN_MS = 2 * 1000;
-
-export function isHazardEmailCooldownActive(lastSentAt, now = Date.now()) {
-  const timestamp = Number(lastSentAt);
-  return Number.isFinite(timestamp) && timestamp > 0 && now - timestamp < HAZARD_EMAIL_COOLDOWN_MS;
-}
-
 async function submitHazardEmail(user, payload) {
   const endpoint = import.meta.env.VITE_HAZARD_EMAIL_ENDPOINT?.trim();
 
@@ -33,15 +26,6 @@ async function submitHazardEmail(user, payload) {
   }
 
   return { sent: true, reason: 'request_submitted' };
-}
-
-export function sendHazardEmail({ user, hazardType, site, cameraSource, severity }) {
-  return submitHazardEmail(user, {
-    hazardType,
-    site,
-    cameraSource,
-    severity,
-  });
 }
 
 export function sendHazardEmailTest(user) {

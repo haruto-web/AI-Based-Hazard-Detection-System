@@ -1,4 +1,9 @@
 {
+  "functions": [
+    {
+      "source": "functions"
+    }
+  ],
   "firestore": [
     {
       "database": "hazora",

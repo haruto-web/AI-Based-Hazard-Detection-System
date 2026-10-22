@@ -259,7 +259,7 @@
 }
 
 .admin-mobile-row {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr)) auto;
 }
 
 .admin-directory-row {
@@ -280,6 +280,8 @@
 
 .admin-directory-actions {
   display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   justify-content: flex-end;
 }
 
@@ -311,11 +313,20 @@
   border: 1px solid var(--border);
   border-radius: 5px;
   background: transparent;
-  color: var(--error);
+  color: var(--text-primary);
   font: inherit;
   font-size: 0.8rem;
   font-weight: 600;
   cursor: pointer;
+}
+
+.admin-directory-actions .admin-password-reset {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.admin-directory-actions .admin-delete {
+  color: var(--error);
 }
 
 .admin-directory-actions button:disabled {

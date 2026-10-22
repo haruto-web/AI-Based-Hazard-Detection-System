@@ -41,8 +41,7 @@ export default function Dashboard() {
     handleMainStreamChange,
   } = useCameraSettings(user.uid);
 
-  // Detection is owned here so the annotated canvas can overlay the main stream
-  // and the AI Detection panel can share the same state. The site location (if
+  // Detection is owned here for the AI Detection panel. The site location (if
   // known) is stamped on auto-captured violation images for the gallery.
   const detection = useDetection(cameraIP, connectedCount > 0, userSite);
 

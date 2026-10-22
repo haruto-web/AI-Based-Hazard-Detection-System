@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createIncidentReport, getIncidents } from '../utils/incidents';
-import { HAZARD_EMAIL_COOLDOWN_MS, sendHazardEmail } from '../utils/hazardEmail';
 import { useNotifications } from '../context/NotificationContext';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -10,8 +9,6 @@ import {
   detectFaces,
   detectPersons,
   detectPpeObjects,
-  drawPersonResult,
-  drawPpeResult,
   groupPpeDetections,
   loadFaceDetectionModel,
   loadPpeDetectionModels,
@@ -63,7 +60,6 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
   if (trackerRef.current === null) trackerRef.current = createPersonTracker();
   // Per-track, per-item confirmation-frame counter: `${trackId}:${item}` -> n.
   const confirmFramesRef = useRef({});
-  const lastEmailSentRef = useRef({});
   const backendAlertRef = useRef({});
   const backendPpePresenceRef = useRef({});
   const cachedPersonsRef = useRef([]);
@@ -302,18 +298,6 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
           site: siteForIncident,
         });
 
-        const emailKey = `${cameraIP}:${issue.item}`;
-        const lastEmailSentAt = lastEmailSentRef.current[emailKey] || 0;
-        if (Date.now() - lastEmailSentAt >= HAZARD_EMAIL_COOLDOWN_MS) {
-          lastEmailSentRef.current[emailKey] = Date.now();
-          sendHazardEmail({
-            user,
-            hazardType: report.hazardType,
-            site: siteForIncident,
-            cameraSource: cameraIP,
-            severity: report.severity,
-          }).catch((error) => console.error('Hazard email request failed unexpectedly:', error));
-        }
       }
 
       const backendSummary = [
@@ -336,7 +320,7 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
       console.warn('Backend AI detection unavailable, falling back to browser model:', error?.message || error);
       return false;
     }
-  }, [addNotification, cameraIP, captureFaceEvidence, siteLocation, user, userId]);
+  }, [addNotification, cameraIP, captureFaceEvidence, siteLocation, userId]);
 
   const detectFrame = useCallback(async () => {
     const now = Date.now();
@@ -370,7 +354,7 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
 
     inferenceInFlightRef.current = true;
 
-    // Draw the captured frame plus detection boxes onto the panel canvas.
+    // Keep the captured frame clean while using it as the model input.
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
 
@@ -405,8 +389,6 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
       const rawGroups = groupPpeDetections(ppeObjects, canvas.width, persons, canvas.height);
       // Attach a stable trackId to each person so alerts are per-person.
       const groups = trackerRef.current.assign(rawGroups);
-      persons.forEach((person) => drawPersonResult(ctx, person));
-      ppeObjects.forEach((detection) => drawPpeResult(ctx, detection));
 
       const helmets = ppeObjects.filter((item) => item.label === 'Safety Helmet').length;
       const vests = ppeObjects.filter((item) => item.label === 'Safety Vest').length;
@@ -442,13 +424,12 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
         violations: violationGroups.length,
       });
 
-      const now = Date.now();
       const tracker = trackerRef.current;
       const siteForIncident = siteLocation && siteLocation.trim()
         ? siteLocation.trim()
         : 'Site location not set';
 
-      // Lazily capture the annotated frame only once per frame if any alert fires.
+      // Lazily capture the clean frame only once per frame if any alert fires.
       let cachedImageData = null;
       let rawCanvas = null;
       let facesPromise = null;
@@ -506,26 +487,8 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
             cameraSource: cameraIP,
           });
 
-          const lastEmailSentAt = lastEmailSentRef.current[key] || 0;
-          if (now - lastEmailSentAt >= HAZARD_EMAIL_COOLDOWN_MS) {
-            lastEmailSentRef.current[key] = now;
-            sendHazardEmail({
-              user,
-              hazardType: report.hazardType,
-              site: siteForIncident,
-              cameraSource: cameraIP,
-              severity: report.severity,
-            }).then((result) => {
-              if (!result.sent) {
-                console.warn('Hazard email was not sent:', result.reason);
-              }
-            }).catch((error) => {
-              console.error('Hazard email request failed unexpectedly:', error);
-            });
-          }
-
           // Keep a single incident for an ongoing tracked violation. Email
-          // repeats are independently rate-limited above.
+          // delivery is triggered by the shared Firestore incident record.
           if (alreadyAlerted) continue;
 
           tracker.markAlerted(track, item);
@@ -584,7 +547,7 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
     } finally {
       inferenceInFlightRef.current = false;
     }
-  }, [ppeModel, personModel, cameraIP, addNotification, userId, user, siteLocation, getFaceModel, detectViaBackend]);
+  }, [ppeModel, personModel, cameraIP, addNotification, userId, siteLocation, getFaceModel, detectViaBackend]);
 
   useEffect(() => {
     if (detecting && isConnected && cameraIP && (AI_SERVICE_URL || ppeModel)) {
@@ -638,7 +601,6 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
       // Clear tracking state so a fresh session starts clean.
       trackerRef.current.reset();
       confirmFramesRef.current = {};
-      lastEmailSentRef.current = {};
       return;
     }
 
