@@ -379,7 +379,7 @@ export default function AdminPage() {
           <div>
             <p className="admin-eyebrow">ACCOUNT CONTROL</p>
             <h1>Administration</h1>
-            <p>Review website registrations and inspect provisioned mobile accounts.</p>
+            <p>Review website and mobile-app registrations, then inspect provisioned mobile accounts.</p>
           </div>
           <span className="admin-live-status"><span aria-hidden="true" /> Live updates</span>
         </div>
@@ -432,6 +432,7 @@ export default function AdminPage() {
                   <article className="admin-user-row" key={account.id}>
                     <div className="admin-user-identity">
                       <strong>{account.fullName || 'Name not provided'}</strong>
+                      {account.registrationSource === 'mobile' && <small>Registered from mobile app</small>}
                       <span>{account.email || 'Email not provided'}</span>
                       <span>{account.phone || 'Phone not provided'}</span>
                       <small>Registered {formatDate(account.createdAt)}</small>
