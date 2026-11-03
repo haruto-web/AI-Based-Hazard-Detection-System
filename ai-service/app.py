@@ -14,7 +14,8 @@ from PIL import Image, ImageOps, ImageStat
 from ultralytics import YOLO
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
-DEFAULT_MODEL_PATH = ROOT_DIR / "runs" / "detect" / "training" / "runs" / "ppe-yolov8n" / "weights" / "best.pt"
+DEFAULT_MODEL_PATH = ROOT_DIR / "hazora-dashboard" / "public" / "models" / "ppe" / "yolov8n.tflite"
+MODEL_DATA_PATH = ROOT_DIR / "ai-service" / "ppe-model.yaml"
 MODEL_PATH = Path(os.environ.get("AI_MODEL_PATH") or DEFAULT_MODEL_PATH)
 DEFAULT_PERSON_MODEL_PATH = ROOT_DIR / "yolov8n.pt"
 PERSON_MODEL_PATH = Path(os.environ.get("AI_PERSON_MODEL_PATH") or DEFAULT_PERSON_MODEL_PATH)
@@ -47,9 +48,21 @@ else:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    global model, MODEL_LOAD_ERROR
+
     warmup_image = Image.new("RGB", (640, 480))
     if model is not None:
-        model(warmup_image, imgsz=640, conf=0.20, verbose=False)
+        try:
+            model(
+                warmup_image,
+                imgsz=640,
+                conf=0.20,
+                data=str(MODEL_DATA_PATH),
+                verbose=False,
+            )
+        except Exception as exc:
+            model = None
+            MODEL_LOAD_ERROR = str(exc)
     if person_model is not None:
         person_model(
             warmup_image,
@@ -195,6 +208,7 @@ def _summarize_results(result, people_result=None, frame_size=None) -> Dict[str,
     }
     alerts: List[Dict[str, Any]] = []
     ppe_items = []
+    model_people = []
 
     names = getattr(result, "names", {}) or {}
     for box in boxes or []:
@@ -202,18 +216,30 @@ def _summarize_results(result, people_result=None, frame_size=None) -> Dict[str,
         label_id = int(box.cls[0].item())
         label = str(names.get(label_id, label_id))
         confidence = float(box.conf[0].item())
-        if confidence < _ppe_confidence_threshold(label):
-            continue
         lower_label = label.lower()
 
-        if "helmet" in lower_label or "hard hat" in lower_label:
-            counts["helmets"] += 1
-        elif "vest" in lower_label or "jacket" in lower_label:
-            counts["vests"] += 1
-        elif "shoe" in lower_label or "boot" in lower_label:
-            counts["shoes"] += 1
+        if lower_label == "person":
+            if confidence >= 0.25:
+                model_people.append(coordinates)
+            continue
 
-        ppe_items.append((lower_label, coordinates))
+        if confidence < _ppe_confidence_threshold(label):
+            continue
+
+        is_missing = lower_label.startswith(("no ", "no-", "missing ", "without "))
+        if "helmet" in lower_label or "hard hat" in lower_label:
+            if not is_missing:
+                counts["helmets"] += 1
+                ppe_items.append((lower_label, coordinates))
+        elif "vest" in lower_label or "jacket" in lower_label:
+            if not is_missing:
+                counts["vests"] += 1
+                ppe_items.append((lower_label, coordinates))
+        elif "shoe" in lower_label or "boot" in lower_label:
+            if not is_missing:
+                counts["shoes"] += 1
+                ppe_items.append((lower_label, coordinates))
+
         alerts.append({
             "label": label,
             "confidence": round(confidence, 3),
@@ -227,6 +253,8 @@ def _summarize_results(result, people_result=None, frame_size=None) -> Dict[str,
             class_id = int(box.cls[0].item())
             if class_id == PERSON_CLASS_ID or str(person_names.get(class_id, "")).lower() == "person":
                 people.append([float(value) for value in box.xyxy[0].tolist()])
+    if not people:
+        people = model_people
 
     if people and frame_size:
         frame_height = frame_size[1]
@@ -262,8 +290,7 @@ def _summarize_results(result, people_result=None, frame_size=None) -> Dict[str,
 
         counts["compliant"] = compliant
     else:
-        # Retain PPE-derived worker estimates if the person detector is not
-        # available or did not find people in the frame.
+        # Retain PPE-derived worker estimates if neither person detector found people.
         counts["persons"] = max(counts["helmets"], counts["vests"], counts["shoes"])
         counts["noHelmets"] = max(0, counts["persons"] - counts["helmets"])
         counts["noVests"] = max(0, counts["persons"] - counts["vests"])
@@ -291,7 +318,13 @@ async def detect(request: DetectRequest) -> Dict[str, Any]:
             image = _read_image_from_url(request.imageUrl)
 
         image = _prepare_ppe_image(image)
-        result = model(image, imgsz=640, conf=0.20, verbose=False)[0]
+        result = model(
+            image,
+            imgsz=640,
+            conf=0.20,
+            data=str(MODEL_DATA_PATH),
+            verbose=False,
+        )[0]
         people_result = None
         if person_model is not None:
             people_result = person_model(

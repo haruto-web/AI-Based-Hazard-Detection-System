@@ -1,3 +1,7 @@
 Safety Helmet
 Safety Vest
 Safety Shoes
+Person
+No Safety Helmet
+No Safety Vest
+No Safety Shoes

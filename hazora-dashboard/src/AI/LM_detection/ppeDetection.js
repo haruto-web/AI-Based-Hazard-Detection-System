@@ -4,13 +4,25 @@ import * as cocoSsd from '@tensorflow-models/coco-ssd';
 import * as blazeface from '@tensorflow-models/blazeface';
 
 export const PPE_MODEL_URL = '/models/ppe/yolov8n.tflite';
-export const PPE_LABELS = ['Safety Helmet', 'Safety Vest', 'Safety Shoes'];
+export const PPE_LABELS = [
+  'Safety Helmet',
+  'Safety Vest',
+  'Safety Shoes',
+  'Person',
+  'No Safety Helmet',
+  'No Safety Vest',
+  'No Safety Shoes',
+];
 export const PPE_INPUT_SIZE = 640;
 export const PPE_CONFIDENCE_THRESHOLD = 0.56;
 export const PPE_CLASS_CONFIDENCE_THRESHOLDS = {
   'Safety Helmet': PPE_CONFIDENCE_THRESHOLD,
   'Safety Vest': 0.20,
   'Safety Shoes': PPE_CONFIDENCE_THRESHOLD,
+  Person: 0.25,
+  'No Safety Helmet': PPE_CONFIDENCE_THRESHOLD,
+  'No Safety Vest': 0.20,
+  'No Safety Shoes': PPE_CONFIDENCE_THRESHOLD,
 };
 export const PPE_IOU_THRESHOLD = 0.70;
 export const PPE_DETECTION_GRACE_MS = 5000;

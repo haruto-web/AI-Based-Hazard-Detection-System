@@ -22,7 +22,31 @@ describe('TensorFlow model packages', () => {
 });
 
 describe('YOLOv8 output parsing', () => {
-  const channels = 4 + PPE_LABELS.length; // 7
+  const channels = 4 + PPE_LABELS.length; // 11
+
+  it('uses the seven classes in the replacement PPE model', () => {
+    expect(PPE_LABELS).toEqual([
+      'Safety Helmet',
+      'Safety Vest',
+      'Safety Shoes',
+      'Person',
+      'No Safety Helmet',
+      'No Safety Vest',
+      'No Safety Shoes',
+    ]);
+
+    const values = new Float32Array(channels);
+    values[0] = 0.5;
+    values[1] = 0.5;
+    values[2] = 0.2;
+    values[3] = 0.4;
+    values[4 + 4] = 0.9;
+
+    const result = parseYoloOutput(values, [1, channels, 1], 100, 100);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].label).toBe('No Safety Helmet');
+  });
 
   it('parses a channels-last detection in normalized coordinates', () => {
     // One candidate: center (0.5, 0.5), size (0.2, 0.4), class 0 (helmet) score 0.9
@@ -170,6 +194,21 @@ describe('PPE grouping', () => {
     expect(groups[0].hasHelmet).toBe(true);
     expect(groups[0].missing).toContain('Safety Vest');
     expect(groups[0].missing).not.toContain('Safety Shoes');
+  });
+
+  it('does not treat explicit no-PPE classes as equipment present', () => {
+    const detections = [
+      { label: 'No Safety Helmet', score: 0.9, box: { x: 45, y: 5, width: 10, height: 10 } },
+      { label: 'No Safety Vest', score: 0.9, box: { x: 45, y: 30, width: 10, height: 20 } },
+    ];
+    const persons = [{ score: 0.95, box: { x: 20, y: 0, width: 60, height: 50 } }];
+
+    const groups = groupPpeDetections(detections, 100, persons, 100);
+
+    expect(groups[0].hasHelmet).toBe(false);
+    expect(groups[0].hasVest).toBe(false);
+    expect(groups[0].missing).toContain('Safety Helmet');
+    expect(groups[0].missing).toContain('Safety Vest');
   });
 
   it('does not require shoes when the person box is clipped by the frame', () => {

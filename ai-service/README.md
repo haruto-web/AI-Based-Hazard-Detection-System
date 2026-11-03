@@ -1,10 +1,12 @@
 # Hazora AI Service
 
-This service runs PPE and person analysis outside the browser so the dashboard can keep streaming smoothly. It loads the PPE checkpoint and the repository's COCO `yolov8n.pt` checkpoint to count people even when no PPE is detected. Set `AI_MODEL_PATH` or `AI_PERSON_MODEL_PATH` to override either model path.
+This service runs PPE and person analysis outside the browser so the dashboard can keep streaming smoothly. The backend and browser use the same PPE TFLite model at `hazora-dashboard/public/models/ppe/yolov8n.tflite`; it is tracked with Git LFS. The backend also loads the repository's COCO `yolov8n.pt` checkpoint to count people even when no PPE is detected. Set `AI_MODEL_PATH` or `AI_PERSON_MODEL_PATH` to override either model path. The TFLite model requires the `ai-edge-litert` dependency, which is included in `requirements.txt`.
 
 ## PPE model accuracy
 
-The checked-in training data currently contains 18 training images and 1 validation image. This is too little validation data to establish reliable helmet, vest, or shoe recall across different people, camera angles, and lighting. The backend uses confidence thresholds of 0.35 for helmets and shoes and 0.20 for vests; the browser fallback uses 0.56 for helmets and shoes and 0.20 for vests. Backend frames with mean luminance below 80/255 receive an autocontrast adjustment before inference; high-light frames are left unchanged because the available validation data does not establish a safe correction for glare or clipped highlights. The dashboard temporarily keeps a recent PPE detection for up to 5 seconds to avoid a one-frame flicker, but improving general accuracy requires adding varied, correctly labeled images and retraining the PPE model.
+The model has seven classes: Safety Helmet, Safety Vest, Safety Shoes, Person, No Safety Helmet, No Safety Vest, and No Safety Shoes. Class names are supplied to the backend in `ppe-model.yaml` and to the browser in `hazora-dashboard/public/models/ppe/labels.txt`. The backend uses confidence thresholds of 0.35 for helmets and shoes and 0.20 for vests; the browser uses 0.56 for helmets and shoes and 0.20 for vests. These thresholds have not yet been validated against a labeled evaluation set for the new model. Backend frames with mean luminance below 80/255 receive an autocontrast adjustment. The dashboard temporarily keeps a recent PPE detection for up to 5 seconds to avoid a one-frame flicker.
+
+On Windows, an application-control policy may block the native `ai-edge-litert` runtime even after it is installed. If that happens, the AI service still starts, but `/health` reports a degraded status and the model loading error; ask your administrator to allow the runtime rather than disabling the policy.
 
 ## Start
 

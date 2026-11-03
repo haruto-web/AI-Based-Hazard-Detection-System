@@ -1,8 +1,10 @@
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from PIL import Image
 
+import app
 from app import _prepare_ppe_image, _summarize_results
 
 
@@ -113,6 +115,58 @@ class SummarizeResultsTests(unittest.TestCase):
         self.assertEqual(counts["helmets"], 1)
         self.assertEqual(counts["noHelmets"], 0)
         self.assertEqual(counts["violations"], 1)
+
+    def test_handles_explicit_missing_ppe_and_person_classes(self):
+        ppe_result = SimpleNamespace(
+            boxes=[
+                detection(3, [10, 5, 90, 99]),
+                detection(1, [40, 30, 60, 55]),
+                detection(4, [40, 10, 60, 25]),
+            ],
+            names={
+                0: "Safety Helmet",
+                1: "Safety Vest",
+                2: "Safety Shoes",
+                3: "Person",
+                4: "No Safety Helmet",
+                5: "No Safety Vest",
+                6: "No Safety Shoes",
+            },
+        )
+
+        counts, alerts = _summarize_results(ppe_result, frame_size=(100, 100))
+
+        self.assertEqual(counts["persons"], 1)
+        self.assertEqual(counts["helmets"], 0)
+        self.assertEqual(counts["vests"], 1)
+        self.assertEqual(counts["noHelmets"], 1)
+        self.assertEqual(counts["noVests"], 0)
+        self.assertEqual(
+            [alert["label"] for alert in alerts],
+            ["Safety Vest", "No Safety Helmet"],
+        )
+
+
+class ModelStartupTests(unittest.IsolatedAsyncioTestCase):
+    async def test_tflite_runtime_failure_is_reported_without_stopping_service(self):
+        class BlockedModel:
+            def __call__(self, *_args, **_kwargs):
+                raise ImportError("TFLite runtime blocked")
+
+        with (
+            patch.object(app, "model", BlockedModel()),
+            patch.object(app, "MODEL_LOAD_ERROR", None),
+            patch.object(app, "person_model", None),
+        ):
+            async with app.lifespan(app.app):
+                self.assertIsNone(app.model)
+                self.assertEqual(app.MODEL_LOAD_ERROR, "TFLite runtime blocked")
+
+    def test_default_model_path_uses_latest_tflite_file(self):
+        self.assertEqual(
+            app.DEFAULT_MODEL_PATH,
+            app.ROOT_DIR / "hazora-dashboard" / "public" / "models" / "ppe" / "yolov8n.tflite",
+        )
 
 
 if __name__ == "__main__":

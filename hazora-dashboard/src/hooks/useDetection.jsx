@@ -284,7 +284,7 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
           cameraSource: cameraIP,
           severity: report.severity,
           detectionConfidence: 0.9,
-          model: 'YOLOv8n PPE (backend)',
+          model: 'PPE TFLite (backend)',
           detectedWorkers: detections.persons || issue.count,
           compliant: detections.compliant || 0,
           helmets: detections.helmets || 0,
@@ -381,22 +381,28 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
         cachedPersonsRef.current = refreshedPersons;
         lastPersonDetectionAtRef.current = Date.now();
       }
-      const persons = cachedPersonsRef.current;
+      const modelPersons = ppeObjects
+        .filter((item) => item.label === 'Person')
+        .map(({ score, box }) => ({ score, box }));
+      const equipmentDetections = ppeObjects.filter((item) => item.label !== 'Person');
+      const persons = cachedPersonsRef.current.length
+        ? cachedPersonsRef.current
+        : modelPersons;
 
       // One group per detected person (falls back to spatial clustering when
       // no person model output is available). canvas.height enables adaptive
       // visibility so shoes/vest aren't flagged when out of frame.
-      const rawGroups = groupPpeDetections(ppeObjects, canvas.width, persons, canvas.height);
+      const rawGroups = groupPpeDetections(equipmentDetections, canvas.width, persons, canvas.height);
       // Attach a stable trackId to each person so alerts are per-person.
       const groups = trackerRef.current.assign(rawGroups);
 
-      const helmets = ppeObjects.filter((item) => item.label === 'Safety Helmet').length;
-      const vests = ppeObjects.filter((item) => item.label === 'Safety Vest').length;
-      const shoes = ppeObjects.filter((item) => item.label === 'Safety Shoes').length;
+      const helmets = equipmentDetections.filter((item) => item.label === 'Safety Helmet').length;
+      const vests = equipmentDetections.filter((item) => item.label === 'Safety Vest').length;
+      const shoes = equipmentDetections.filter((item) => item.label === 'Safety Shoes').length;
 
       // Average detection confidence across all PPE boxes this frame (0..1).
-      const avgConfidence = ppeObjects.length
-        ? ppeObjects.reduce((sum, item) => sum + item.score, 0) / ppeObjects.length
+      const avgConfidence = equipmentDetections.length
+        ? equipmentDetections.reduce((sum, item) => sum + item.score, 0) / equipmentDetections.length
         : 0;
 
       // Per-person evaluation: a group is a violation if it is missing anything
@@ -514,7 +520,7 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
             cameraSource: cameraIP,
             severity: report.severity,
             detectionConfidence: avgConfidence,
-            model: 'YOLOv8n PPE',
+            model: 'PPE TFLite',
             detectedWorkers: personCount,
             compliant: compliantGroups.length,
             helmets,

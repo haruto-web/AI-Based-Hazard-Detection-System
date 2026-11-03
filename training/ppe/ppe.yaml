@@ -1,8 +1,0 @@
-path: C:/Users/venan/Documents/GitHub/AI-Based-Hazard-Detection-System/training/ppe
-train: images/train
-val: images/val
-names:
-  0: Safety Helmet
-  1: Safety Vest
-  2: Safety Shoes
-
