@@ -167,7 +167,7 @@ export default function Dashboard() {
             )}
 
             {activeView === 'gallery' && canAccess(userRole, 'gallery') && (
-              <GalleryPage />
+              <GalleryPage userRole={userRole} />
             )}
 
             {activeView === 'reports' && canAccess(userRole, 'reports') && (

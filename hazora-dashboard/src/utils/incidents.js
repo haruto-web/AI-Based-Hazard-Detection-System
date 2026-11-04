@@ -1,5 +1,14 @@
 import { jsPDF } from 'jspdf';
-import { collection, limit, onSnapshot, orderBy, query, serverTimestamp } from 'firebase/firestore';
+import {
+  collection,
+  getDocs,
+  limit,
+  onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp,
+  where,
+} from 'firebase/firestore';
 import { db } from '../firebase';
 import { computeReportSummary, computePpeBreakdown } from './analytics';
 
@@ -27,6 +36,38 @@ function writeStoredIncidents(incidents) {
 
 export function getIncidents() {
   return readStoredIncidents();
+}
+
+export function buildTrainingDataset(incidents) {
+  return incidents
+    .map(normalizeIncident)
+    .filter((incident) => (
+      incident.validationStatus === 'Validated' &&
+      incident.isTrainingDatasetCandidate === true &&
+      incident.imageData
+    ))
+    .map((incident) => ({
+      id: incident.id,
+      category: incident.hazardCategory || incident.hazardType,
+      subTypes: Array.isArray(incident.subTypes) ? incident.subTypes : [],
+      imageData: incident.imageData,
+      notes: incident.description,
+      classifiedBy: incident.classifiedBy || '',
+      location: incident.site,
+      timestamp: incident.timestamp,
+    }));
+}
+
+export async function fetchTrainingDataset() {
+  const datasetQuery = query(
+    collection(db, 'incidents'),
+    where('validationStatus', '==', 'Validated')
+  );
+  const snapshot = await getDocs(datasetQuery);
+  return buildTrainingDataset(snapshot.docs.map((incidentDoc) => ({
+    ...incidentDoc.data(),
+    id: incidentDoc.id,
+  })));
 }
 
 // Normalize a stored image into a valid <img>-usable data URL.
@@ -297,7 +338,7 @@ export function subscribeToIncidents(userId, onIncidents) {
   return onSnapshot(
     incidentsQuery,
     (snapshot) => {
-      const incidents = snapshot.docs.map((doc) => normalizeIncident({ id: doc.id, ...doc.data() }));
+      const incidents = snapshot.docs.map((doc) => normalizeIncident({ ...doc.data(), id: doc.id }));
       writeStoredIncidents(incidents);
       onIncidents(incidents);
     },

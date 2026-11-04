@@ -113,7 +113,23 @@ Real-time video monitoring page displaying camera feeds from construction sites 
 
 ---
 
-## 5. Reports Page (`/reports`)
+## 5. Incident Captures / Mobile Validation Queue (`gallery`)
+**File:** `hazora-dashboard/src/components/GalleryPage.jsx`
+
+### Description
+Shared image review page for incidents captured by the website and mobile app.
+
+### Features
+- Displays mobile classification categories, subtype labels, officer notes, image, and validation status.
+- Separates mobile records awaiting validation from records already validated in the mobile app by safety officers.
+- Website users can review mobile classifications and validation status but do not validate records.
+- Exports validated candidate records with images and annotations as a JSON file for dataset preparation.
+
+### Firestore Fields
+- `hazardCategory`, `subTypes`, `validationStatus`, and `isTrainingDatasetCandidate`
+- `classifiedBy`, `description`, `imageData`, `location`, and `timestamp`
+
+## 6. Reports Page (`/reports`)
 **File:** Component reference in routing
 
 ### Description
@@ -143,7 +159,7 @@ Historical report generation and management page for safety compliance documenta
 
 ---
 
-## 6. About Page (`/about`)
+## 7. About Page (`/about`)
 **File:** Component reference in routing
 
 ### Description
@@ -169,7 +185,7 @@ Project information page explaining the HAZORA system, its features, and technic
 
 ---
 
-## 7. Profile Page (`/profile`)
+## 8. Profile Page (`/profile`)
 **File:** Component reference in routing
 
 ### Description
@@ -230,7 +246,7 @@ User account management page for viewing and editing personal information.
    - siteId, cameraId, timestamp, hazardType, severity
 
 4. **`incidents`** - Safety incident logs
-   - siteId, description, timestamp, resolvedStatus
+   - Shared web/mobile incident records, including optional officer classification, validation, and training-candidate fields
 
 5. **`reports`** - Generated safety reports
    - siteId, dateRange, metrics, generatedAt

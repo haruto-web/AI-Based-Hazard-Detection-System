@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import {
+  buildTrainingDataset,
   deleteIncident,
+  fetchTrainingDataset,
   getIncidents,
   INCIDENTS_UPDATED_EVENT,
   subscribeToIncidents,
 } from '../utils/incidents';
+import { hasFullAccess } from '../config/roles';
 import '../styles/GalleryPage.css';
 
 const SITE_NOT_SET = 'Site location not set';
@@ -13,8 +16,9 @@ const SITE_NOT_SET = 'Site location not set';
 // Incident captures show images attached to detected incidents from supported streams.
 const SEVERITY_FILTERS = ['all', 'low', 'medium', 'high', 'critical'];
 
-export default function GalleryPage() {
+export default function GalleryPage({ userRole }) {
   const { user } = useAuth();
+  const canExportDataset = hasFullAccess(userRole, 'gallery');
   const [incidents, setIncidents] = useState(() => getIncidents());
   const [selected, setSelected] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -22,6 +26,7 @@ export default function GalleryPage() {
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [deleteError, setDeleteError] = useState('');
   const [deleting, setDeleting] = useState(false);
+  const [exportMessage, setExportMessage] = useState('');
 
   async function handleDelete(capture) {
     setDeleting(true);
@@ -37,6 +42,31 @@ export default function GalleryPage() {
       setDeleteError(error.message || 'Could not delete this capture. Please try again.');
     } finally {
       setDeleting(false);
+    }
+  }
+
+  async function handleExportDataset() {
+    setExportMessage('');
+    try {
+      const trainingSamples = await fetchTrainingDataset();
+      if (trainingSamples.length === 0) {
+        setExportMessage('No validated image records are available to export.');
+        return;
+      }
+
+      const blob = new Blob([JSON.stringify(trainingSamples, null, 2)], {
+        type: 'application/json',
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `hazora-training-dataset-${new Date().toISOString().slice(0, 10)}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+      setExportMessage(`Exported ${trainingSamples.length} validated image records.`);
+    } catch (error) {
+      console.error('Could not export training dataset:', error);
+      setExportMessage(error.message || 'Could not export the training dataset. Please try again.');
     }
   }
 
@@ -62,6 +92,7 @@ export default function GalleryPage() {
       .filter((incident) => incident.imageData)
       .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
   ), [incidents]);
+  const validatedCount = buildTrainingDataset(incidents).length;
 
   // Apply the severity filter + free-text search (hazard, description, site,
   // camera, date, time).
@@ -72,9 +103,12 @@ export default function GalleryPage() {
       if (!q) return true;
       const haystack = [
         capture.hazardType,
+        capture.hazardCategory,
+        ...(Array.isArray(capture.subTypes) ? capture.subTypes : []),
         capture.description,
         capture.site || SITE_NOT_SET,
         capture.cameraSource,
+        capture.validationStatus,
         capture.date,
         capture.time,
       ]
@@ -85,20 +119,48 @@ export default function GalleryPage() {
     });
   }, [captures, severityFilter, searchQuery]);
 
+  const captureSections = [
+    {
+      id: 'pending',
+      title: 'Awaiting mobile validation',
+      description: 'Mobile-submitted captures not yet marked validated by a safety officer.',
+      captures: filtered.filter((capture) => capture.validationStatus === 'Pending Validation'),
+    },
+    {
+      id: 'validated',
+      title: 'Validated by mobile safety officers',
+      description: 'Classified and validated in the mobile app by field safety officers.',
+      captures: filtered.filter((capture) => capture.validationStatus === 'Validated'),
+    },
+    {
+      id: 'other',
+      title: 'Other incident captures',
+      description: 'Captures without a mobile validation status, including website detections.',
+      captures: filtered.filter((capture) => !['Pending Validation', 'Validated'].includes(capture.validationStatus)),
+    },
+  ].filter((section) => section.captures.length > 0);
+
   return (
     <div className="gallery-page">
       <div className="gallery-header">
         <div>
           <h2 className="gallery-title">Incident Captures</h2>
           <p className="gallery-subtitle">
-            Images captured when an incident is detected from a web or app stream.
+            Review captures and mobile officer classifications. Validation is completed in the mobile app.
           </p>
         </div>
-        <span className="gallery-count">
-          {filtered.length} of {captures.length} capture{captures.length === 1 ? '' : 's'}
-        </span>
+        <div className="gallery-header-actions">
+          {canExportDataset && (
+            <button type="button" className="gallery-export-btn" onClick={handleExportDataset}>
+              Export validated dataset ({validatedCount})
+            </button>
+          )}
+          <span className="gallery-count">
+            {filtered.length} of {captures.length} capture{captures.length === 1 ? '' : 's'}
+          </span>
+        </div>
       </div>
-
+      {exportMessage && <p className="gallery-feedback" role="status">{exportMessage}</p>}
       {/* Search + severity filters */}
       <div className="gallery-controls">
         <div className="gallery-search">
@@ -145,51 +207,77 @@ export default function GalleryPage() {
           <p className="gallery-empty-hint">Try a different search term or severity.</p>
         </div>
       ) : (
-        <div className="gallery-grid">
-          {filtered.map((capture) => (
-            <div
-              key={capture.id}
-              className="gallery-card"
-              role="button"
-              tabIndex={0}
-              onClick={() => setSelected(capture)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelected(capture); }
-              }}
-            >
-              <div className="gallery-card-image">
-                <img src={capture.imageData} alt={capture.hazardType} loading="lazy" />
-                <span className={`gallery-card-severity ${capture.severity}`}>{capture.severity}</span>
-                <span
-                  className="gallery-card-delete"
-                  role="button"
-                  tabIndex={0}
-                  aria-label="Delete capture"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setDeleteError('');
-                    setConfirmDelete(capture);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {                     e.preventDefault();
-                    e.stopPropagation();
-                    setDeleteError('');
-                    setConfirmDelete(capture); }
-                  }}
-                >
-                  🗑
-                </span>
-                {capture.faceData && (
-                  <img className="gallery-card-face" src={capture.faceData} alt="Detected face" loading="lazy" />
-                )}
+        <div className="gallery-sections">
+          {captureSections.map((section) => (
+            <section key={section.id} className={`gallery-section gallery-section-${section.id}`}>
+              <div className="gallery-section-header">
+                <div>
+                  <h3>{section.title}</h3>
+                  <p>{section.description}</p>
+                </div>
+                <span className="gallery-section-count">{section.captures.length}</span>
               </div>
-              <div className="gallery-card-body">
-                <strong className="gallery-card-hazard">{capture.hazardType}</strong>
-                <span className="gallery-card-meta">{capture.date} • {capture.time}</span>
-                <span className="gallery-card-site">{capture.site || SITE_NOT_SET}</span>
-                <p className="gallery-card-desc">{capture.description}</p>
+              <div className="gallery-grid">
+                {section.captures.map((capture) => (
+                  <div
+                    key={capture.id}
+                    className="gallery-card"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setSelected(capture)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelected(capture); }
+                    }}
+                  >
+                    <div className="gallery-card-image">
+                      <img src={capture.imageData} alt={capture.hazardType} loading="lazy" />
+                      <span className={`gallery-card-severity ${capture.severity}`}>{capture.severity}</span>
+                      {capture.validationStatus && (
+                        <span className={`gallery-validation-badge ${capture.validationStatus === 'Validated' ? 'validated' : 'pending'}`}>
+                          {capture.validationStatus}
+                        </span>
+                      )}
+                      <span
+                        className="gallery-card-delete"
+                        role="button"
+                        tabIndex={0}
+                        aria-label="Delete capture"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeleteError('');
+                          setConfirmDelete(capture);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setDeleteError('');
+                            setConfirmDelete(capture);
+                          }
+                        }}
+                      >
+                        🗑
+                      </span>
+                      {capture.faceData && (
+                        <img className="gallery-card-face" src={capture.faceData} alt="Detected face" loading="lazy" />
+                      )}
+                    </div>
+                    <div className="gallery-card-body">
+                      <strong className="gallery-card-hazard">{capture.hazardType}</strong>
+                      <span className="gallery-card-meta">{capture.date} • {capture.time}</span>
+                      <span className="gallery-card-site">{capture.site || SITE_NOT_SET}</span>
+                      {capture.hazardCategory && (
+                        <span className="gallery-card-meta">Category: {capture.hazardCategory}</span>
+                      )}
+                      {Array.isArray(capture.subTypes) && capture.subTypes.length > 0 && (
+                        <span className="gallery-card-meta">Labels: {capture.subTypes.join(', ')}</span>
+                      )}
+                      <p className="gallery-card-desc">{capture.description}</p>
+                    </div>
+                  </div>
+                ))}
               </div>
-            </div>
+            </section>
           ))}
         </div>
       )}
@@ -227,6 +315,28 @@ export default function GalleryPage() {
                 <span className="gallery-modal-label">Severity</span>
                 <span className={`gallery-card-severity ${selected.severity}`}>{selected.severity}</span>
               </div>
+              <div className="gallery-modal-row">
+                <span className="gallery-modal-label">Mobile validation</span>
+                <span>{selected.validationStatus || 'Not validated in mobile app'}</span>
+              </div>
+              {selected.hazardCategory && (
+                <div className="gallery-modal-row">
+                  <span className="gallery-modal-label">Officer category</span>
+                  <span>{selected.hazardCategory}</span>
+                </div>
+              )}
+              {Array.isArray(selected.subTypes) && selected.subTypes.length > 0 && (
+                <div className="gallery-modal-row">
+                  <span className="gallery-modal-label">Officer labels</span>
+                  <span>{selected.subTypes.join(', ')}</span>
+                </div>
+              )}
+              {selected.classifiedBy && (
+                <div className="gallery-modal-row">
+                  <span className="gallery-modal-label">Classified by</span>
+                  <span>{selected.classifiedBy}</span>
+                </div>
+              )}
               <div className="gallery-modal-row">
                 <span className="gallery-modal-label">Confidence</span>
                 <span>{selected.detectionConfidence ? `${Math.round(selected.detectionConfidence * 100)}%` : 'N/A'}</span>
