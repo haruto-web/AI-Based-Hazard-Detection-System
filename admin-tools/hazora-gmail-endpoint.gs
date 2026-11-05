@@ -1,7 +1,9 @@
 // Configure Script Properties: FIREBASE_WEB_API_KEY, FIREBASE_PROJECT_ID,
-// FIRESTORE_DATABASE_ID, HAZARD_EMAIL_TRIGGER_SECRET, and HAZORA_DASHBOARD_URL.
-// Test requests only email the verified caller; hazard fan-out comes from Functions.
+// FIRESTORE_DATABASE_ID, and HAZORA_DASHBOARD_URL.
+// Hazard alerts are polled from Firestore by an installable time-driven trigger.
 const HAZARD_EMAIL_TEST_COOLDOWN_MS = 60 * 1000;
+const HAZARD_EMAIL_POLL_INTERVAL_MINUTES = 1;
+const HAZARD_EMAIL_POLL_MAX_INCIDENTS = 20;
 
 function doGet(e) {
   return handleRequest({
@@ -14,6 +16,111 @@ function doPost(event) {
   return handleRequest(event || { parameter: {}, postData: { contents: '{}' } });
 }
 
+function installHazardIncidentPolling() {
+  const properties = PropertiesService.getScriptProperties();
+  const projectId = properties.getProperty('FIREBASE_PROJECT_ID');
+  if (!projectId) throw new Error('FIREBASE_PROJECT_ID script property is missing');
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const now = new Date().toISOString();
+    properties.setProperty('HAZARD_EMAIL_POLL_START_AT', now);
+    ScriptApp.getProjectTriggers()
+      .filter((trigger) => trigger.getHandlerFunction() === 'pollHazardIncidents')
+      .forEach((trigger) => ScriptApp.deleteTrigger(trigger));
+    ScriptApp.newTrigger('pollHazardIncidents')
+      .timeBased()
+      .everyMinutes(HAZARD_EMAIL_POLL_INTERVAL_MINUTES)
+      .create();
+    console.log(`Hazard incident polling installed. New incidents after ${now} will be checked every ${HAZARD_EMAIL_POLL_INTERVAL_MINUTES} minutes.`);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function stopHazardIncidentPolling() {
+  ScriptApp.getProjectTriggers()
+    .filter((trigger) => trigger.getHandlerFunction() === 'pollHazardIncidents')
+    .forEach((trigger) => ScriptApp.deleteTrigger(trigger));
+  console.log('Hazard incident polling stopped.');
+}
+
+function pollHazardIncidents() {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(1000)) {
+    console.log('Hazard incident poll skipped because another poll is running.');
+    return;
+  }
+
+  try {
+    const properties = PropertiesService.getScriptProperties();
+    const projectId = properties.getProperty('FIREBASE_PROJECT_ID');
+    const databaseId = properties.getProperty('FIRESTORE_DATABASE_ID') || 'hazora';
+    const startAt = Date.parse(properties.getProperty('HAZARD_EMAIL_POLL_START_AT') || '');
+    if (!projectId) throw new Error('FIREBASE_PROJECT_ID script property is missing');
+    if (!Number.isFinite(startAt)) {
+      throw new Error('Run installHazardIncidentPolling once to initialize the polling start time.');
+    }
+
+    const accessToken = ScriptApp.getOAuthToken();
+    const documents = listIncidentDocuments(projectId, databaseId, accessToken)
+      .filter((document) => {
+        const createTime = Date.parse(document.createTime || '');
+        const status = firestoreStringValue(document.fields || {}, 'status').toLowerCase();
+        return Number.isFinite(createTime) && createTime >= startAt &&
+          document.fields?.hazardEmailSent?.booleanValue !== true &&
+          !['resolved', 'done'].includes(status);
+      })
+      .sort((left, right) => Date.parse(left.createTime) - Date.parse(right.createTime));
+    const pending = documents.slice(0, HAZARD_EMAIL_POLL_MAX_INCIDENTS);
+    if (documents.length > pending.length) {
+      console.warn(`Found ${documents.length} pending incidents; processing ${pending.length} this run.`);
+    }
+    if (pending.length === 0) return;
+
+    const recipients = getVerifiedRecipients(projectId, accessToken);
+    pending.forEach((document) => {
+      const fields = document.fields || {};
+      const hazardType = firestoreStringValue(fields, 'hazardType');
+      const ownerUid = firestoreStringValue(fields, 'userId') ||
+        firestoreStringValue(fields, 'createdBy');
+      if (!hazardType || !ownerUid) {
+        console.warn(`Skipping malformed incident ${document.name}: hazardType or owner UID is missing.`);
+        return;
+      }
+      if (recipients.length === 0) {
+        console.warn('No verified Firebase Auth recipients were found; this incident will be retried on the next poll.');
+        return;
+      }
+
+      const incident = {
+        hazardType,
+        severity: firestoreStringValue(fields, 'severity') || 'Not specified',
+        site: firestoreStringValue(fields, 'site') ||
+          firestoreStringValue(fields, 'location') ||
+          'Site location not set',
+        cameraSource: firestoreStringValue(fields, 'cameraSource') || 'Camera not specified',
+      };
+      const documentId = document.name.split('/').pop();
+      const eventId = `poll_${Utilities.base64EncodeWebSafe(
+        Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, document.name),
+      ).replace(/=+$/, '')}`;
+      const result = sendHazardAlert(incident, recipients, Date.now(), properties, eventId);
+      if (result.failedCount > 0 ||
+          result.sentCount + result.skippedCount !== result.recipientCount ||
+          result.recipientCount === 0) {
+        throw new Error(`Hazard email delivery for incident ${documentId} is incomplete; it will be retried.`);
+      }
+
+      markIncidentEmailSent(document.name, accessToken);
+      console.log(`Hazard alert sent for incident ${documentId} to ${result.recipientCount} verified account(s).`);
+    });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 function handleRequest(event) {
   try {
     const parameterPayload = event && event.parameter ? event.parameter : {};
@@ -22,9 +129,6 @@ function handleRequest(event) {
       : {};
     const payload = Object.keys(parameterPayload).length > 0 ? parameterPayload : postPayload;
     const properties = PropertiesService.getScriptProperties();
-    if (payload.action === 'incident_created') {
-      return handleIncidentCreated(payload, properties);
-    }
 
     const user = verifyFirebaseUser(payload.idToken);
     if (!user || !user.emailVerified || !user.email) {
@@ -87,31 +191,6 @@ function handleRequest(event) {
   }
 }
 
-function handleIncidentCreated(payload, properties) {
-  const configuredSecret = properties.getProperty('HAZARD_EMAIL_TRIGGER_SECRET');
-  if (!configuredSecret || payload.triggerSecret !== configuredSecret) {
-    return jsonResponse({ ok: false, reason: 'invalid_trigger_secret' });
-  }
-
-  const incident = payload.incident;
-  const eventId = safeText(payload.eventId, '', 120);
-  if (!incident || typeof incident !== 'object' || !eventId ||
-      typeof incident.hazardType !== 'string' || !incident.hazardType.trim()) {
-    return jsonResponse({ ok: false, reason: 'invalid_incident' });
-  }
-
-  const lock = LockService.getScriptLock();
-  lock.waitLock(10000);
-  try {
-    const projectId = properties.getProperty('FIREBASE_PROJECT_ID');
-    if (!projectId) throw new Error('FIREBASE_PROJECT_ID script property is missing');
-    const recipients = getVerifiedRecipients(projectId, ScriptApp.getOAuthToken());
-    return jsonResponse(sendHazardAlert(incident, recipients, Date.now(), properties, eventId));
-  } finally {
-    lock.releaseLock();
-  }
-}
-
 function sendHazardAlert(payload, recipients, now, properties, eventId) {
   const incident = payload.incident && typeof payload.incident === 'object'
     ? payload.incident
@@ -163,6 +242,7 @@ function sendHazardAlert(payload, recipients, now, properties, eventId) {
     ok: true,
     sent: sentCount > 0,
     sentCount,
+    skippedCount,
     failedCount,
     recipientCount: recipients.length,
     reason: sentCount > 0
@@ -171,6 +251,56 @@ function sendHazardAlert(payload, recipients, now, properties, eventId) {
         ? 'already_sent'
         : 'no_verified_recipients',
   };
+}
+
+function listIncidentDocuments(projectId, databaseId, accessToken) {
+  const documents = [];
+  let pageToken = '';
+  do {
+    const query = pageToken
+      ? `?pageSize=300&pageToken=${encodeURIComponent(pageToken)}`
+      : '?pageSize=300';
+    const url = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}` +
+      `/databases/${encodeURIComponent(databaseId)}/documents/incidents${query}`;
+    const response = UrlFetchApp.fetch(url, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      muteHttpExceptions: true,
+    });
+    if (response.getResponseCode() !== 200) {
+      throw new Error(`Could not list Firestore incidents: ${response.getContentText()}`);
+    }
+
+    const page = JSON.parse(response.getContentText());
+    documents.push(...(page.documents || []));
+    pageToken = page.nextPageToken || '';
+  } while (pageToken);
+
+  return documents;
+}
+
+function firestoreStringValue(fields, fieldName) {
+  const value = fields[fieldName]?.stringValue;
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function markIncidentEmailSent(documentName, accessToken) {
+  const url = `https://firestore.googleapis.com/v1/${documentName}` +
+    '?updateMask.fieldPaths=hazardEmailSent&updateMask.fieldPaths=hazardEmailSentAt';
+  const response = UrlFetchApp.fetch(url, {
+    method: 'patch',
+    contentType: 'application/json',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    payload: JSON.stringify({
+      fields: {
+        hazardEmailSent: { booleanValue: true },
+        hazardEmailSentAt: { timestampValue: new Date().toISOString() },
+      },
+    }),
+    muteHttpExceptions: true,
+  });
+  if (response.getResponseCode() !== 200) {
+    throw new Error(`Could not record email delivery for incident: ${response.getContentText()}`);
+  }
 }
 
 function verifyFirebaseUser(idToken) {

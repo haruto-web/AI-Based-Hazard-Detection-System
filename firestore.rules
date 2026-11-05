@@ -83,8 +83,17 @@ service cloud.firestore {
     }
 
     match /incidents/{incidentId} {
+      // Keep the shared incident feed readable, but only let an authenticated
+      // user create incidents under their own Firebase Auth UID.
+      allow read: if true;
+      allow create: if isSignedIn() && (
+        (request.resource.data.userId is string &&
+          request.resource.data.userId == request.auth.uid) ||
+        (request.resource.data.createdBy is string &&
+          request.resource.data.createdBy == request.auth.uid)
+      );
       // Updated to allow delete for removing resolved/done incidents from mobile
-      allow read, create, update, delete: if true;
+      allow update, delete: if true;
     }
 
     match /detections/{detectionId} {

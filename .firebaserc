@@ -1,0 +1,7 @@
+{
+  "projects": {
+    "npx firebase-tools deploy --only functions:emailVerifiedUsersOnIncident": "project-hazora"
+  },
+  "targets": {},
+  "etags": {}
+}
