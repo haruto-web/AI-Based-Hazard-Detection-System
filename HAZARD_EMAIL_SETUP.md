@@ -40,8 +40,10 @@ address. Approval status and assigned role do not restrict recipients.
    dashboard environment. Hazard alert emails do not depend on a browser being
    open or on that frontend setting.
 
-The trigger checks Firestore's authentication context and confirms the actor is
-a verified Firebase Auth account. If incidents are written through a trusted
+The trigger checks Firestore's authentication context and confirms the incident
+owner is a Firebase Auth account. The owner's email does not need to be
+verified; the Apps Script sends alerts only to Firebase Auth accounts whose
+email addresses are verified. If incidents are written through a trusted
 service account, include the owning Firebase UID in `userId` or `createdBy`.
-Records from unverified accounts are ignored. The Apps Script uses a per-event
-delivery cache to avoid sending the same incident twice during trigger retries.
+The Apps Script uses a per-event delivery cache to avoid sending the same
+incident twice during trigger retries.

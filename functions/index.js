@@ -30,9 +30,8 @@ exports.emailVerifiedUsersOnIncident = onDocumentCreatedWithAuthContext(
       return;
     }
 
-    let owner;
     try {
-      owner = await getAuth().getUser(ownerUid);
+      await getAuth().getUser(ownerUid);
     } catch (error) {
       if (error.code === 'auth/user-not-found') {
         logger.warn('Skipping incident because its owner is not a Firebase Auth user.', {
@@ -42,13 +41,6 @@ exports.emailVerifiedUsersOnIncident = onDocumentCreatedWithAuthContext(
         return;
       }
       throw error;
-    }
-    if (!owner.emailVerified) {
-      logger.warn('Skipping incident from an unverified account.', {
-        incidentId: event.params.incidentId,
-        ownerUid,
-      });
-      return;
     }
 
     const response = await fetch(hazardEmailEndpoint.value(), {
