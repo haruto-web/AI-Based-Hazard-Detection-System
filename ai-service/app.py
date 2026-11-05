@@ -9,11 +9,11 @@ from typing import Any, Dict, List, Optional
 from urllib.request import Request, urlopen
 
 import numpy as np
+from ai_edge_litert.interpreter import Interpreter
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 from PIL import Image, ImageOps, ImageStat
-from ai_edge_litert.interpreter import Interpreter
+from pydantic import BaseModel
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_MODEL_PATH = ROOT_DIR / "hazora-dashboard" / "public" / "models" / "ppe" / "yolov8n.tflite"
@@ -28,7 +28,6 @@ PPE_LABELS = [
     "No Safety Vest",
     "No Safety Shoes",
 ]
-YOLO_INPUT_SIZE = 640
 YOLO_IOU_THRESHOLD = 0.70
 HAZARD_MODEL_CONFIG = {
     "scaffolding": {
@@ -123,6 +122,8 @@ class TFLiteYoloModel:
         )
         resized_width = max(1, round(image_width * scale))
         resized_height = max(1, round(image_height * scale))
+        scale_x = resized_width / image_width
+        scale_y = resized_height / image_height
         pad_x = (self.input_width - resized_width) // 2
         pad_y = (self.input_height - resized_height) // 2
 
@@ -147,7 +148,8 @@ class TFLiteYoloModel:
         boxes = _decode_yolo_output(
             output,
             image.size,
-            scale,
+            scale_x,
+            scale_y,
             pad_x,
             pad_y,
             self.input_width,
@@ -162,7 +164,8 @@ class TFLiteYoloModel:
 def _decode_yolo_output(
     output,
     image_size,
-    scale,
+    scale_x,
+    scale_y,
     pad_x,
     pad_y,
     input_width,
@@ -190,10 +193,10 @@ def _decode_yolo_output(
         center_y = float(coordinates[1, candidate_index]) * coordinate_scale_y
         width = float(coordinates[2, candidate_index]) * coordinate_scale_x
         height = float(coordinates[3, candidate_index]) * coordinate_scale_y
-        left = max(0.0, min(image_width, (center_x - width / 2 - pad_x) / scale))
-        top = max(0.0, min(image_height, (center_y - height / 2 - pad_y) / scale))
-        right = max(0.0, min(image_width, (center_x + width / 2 - pad_x) / scale))
-        bottom = max(0.0, min(image_height, (center_y + height / 2 - pad_y) / scale))
+        left = max(0.0, min(image_width, (center_x - width / 2 - pad_x) / scale_x))
+        top = max(0.0, min(image_height, (center_y - height / 2 - pad_y) / scale_y))
+        right = max(0.0, min(image_width, (center_x + width / 2 - pad_x) / scale_x))
+        bottom = max(0.0, min(image_height, (center_y + height / 2 - pad_y) / scale_y))
         if right <= left or bottom <= top:
             continue
 

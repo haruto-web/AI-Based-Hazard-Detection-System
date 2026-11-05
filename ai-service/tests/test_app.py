@@ -169,7 +169,8 @@ class DecodeYoloOutputTests(unittest.TestCase):
         boxes = _decode_yolo_output(
             output,
             image_size=(320, 320),
-            scale=2,
+            scale_x=2,
+            scale_y=2,
             pad_x=0,
             pad_y=0,
             input_width=640,

@@ -309,11 +309,12 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
     if (!captureUrl) return false;
 
     try {
+      const imageBase64 = await captureFullFrameImage(captureUrl);
       const response = await fetch(`${AI_SERVICE_URL}/detect`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          imageUrl: captureUrl,
+          imageBase64,
           cameraIp: cameraIP,
           source: 'dashboard',
         }),
