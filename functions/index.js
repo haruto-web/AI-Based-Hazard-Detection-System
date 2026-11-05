@@ -23,7 +23,7 @@ exports.emailVerifiedUsersOnIncident = onDocumentCreatedWithAuthContext(
     const ownerUid = event.authId ||
       (event.authType === 'service_account' ? incidentOwnerUid : '');
     if (!isEligibleHazardIncident(incident, ownerUid)) {
-      logger.warn('Skipping incident with an invalid owner or authentication context.', {
+      logger.info('Skipping incident that is not eligible for a hazard email alert.', {
         incidentId: event.params.incidentId,
         authType: event.authType,
       });

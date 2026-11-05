@@ -5,6 +5,7 @@ function isEligibleHazardIncident(incident, ownerUid) {
     typeof incident === 'object' &&
     typeof incident.hazardType === 'string' &&
     incident.hazardType.trim() &&
+    !['resolved', 'done'].includes(String(incident.status || '').trim().toLowerCase()) &&
     typeof ownerUid === 'string' &&
     ownerUid.trim() &&
     (!incidentOwnerUid || incidentOwnerUid === ownerUid)
