@@ -17,6 +17,10 @@ export default function DetectionViewer({ detection, isConnected }) {
     status,
     detections,
     detecting,
+    activeDetectors,
+    detectorModeReady,
+    canManageDetectorMode,
+    updateActiveDetectors,
     toggleDetection,
     handleRetry,
   } = detection;
@@ -35,6 +39,10 @@ export default function DetectionViewer({ detection, isConnected }) {
       status={status}
       detections={detections}
       detecting={detecting}
+      activeDetectors={activeDetectors}
+      detectorModeReady={detectorModeReady}
+      canManageDetectorMode={canManageDetectorMode}
+      updateActiveDetectors={updateActiveDetectors}
       toggleDetection={toggleDetection}
       handleRetry={handleRetry}
     />

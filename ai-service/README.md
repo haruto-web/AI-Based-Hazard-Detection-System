@@ -14,6 +14,8 @@ The service uses LiteRT directly and does not import Ultralytics or PyTorch. If 
 
 Double-click `run-local.bat` (or run it from Command Prompt). On first run it creates an `ai-service/.venv` virtual environment and installs the dependencies. Keep its window open while using the dashboard.
 
+To choose detectors during a session, an authorized head-office safety role can expand **Operator detector settings** in the AI Detection panel and select PPE, scaffolding, protruding hazard, and/or material handling. The active selection appears in the existing detection status and is saved in that user's browser. A detector change takes effect on the next frame and does not require restarting either service. The optional `local-settings.bat` still sets the service's default mode before a dashboard selection is made; `AI_ACTIVE_DETECTORS` accepts `all` or a comma-separated selection.
+
 Start the dashboard separately with `hazora-dashboard/deploy/run-local.bat`. The dashboard's `.env` should contain `VITE_AI_API_URL=http://localhost:8001`.
 
 To start the service manually, run these commands from `ai-service` after installing the dependencies:

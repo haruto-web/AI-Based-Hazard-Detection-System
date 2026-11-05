@@ -53,6 +53,29 @@ HAZARD_MODEL_CONFIG = {
         "reportable": {"Messy"},
     },
 }
+DETECTOR_NAMES = ("ppe", *HAZARD_MODEL_CONFIG.keys())
+
+
+def _parse_active_detectors(value: Optional[str] = None) -> tuple[str, ...]:
+    configured = (value if value is not None else os.environ.get("AI_ACTIVE_DETECTORS", "all")).strip().lower()
+    if configured in ("", "all"):
+        return DETECTOR_NAMES
+
+    active = tuple(dict.fromkeys(name.strip() for name in configured.split(",") if name.strip()))
+    invalid = sorted(set(active) - set(DETECTOR_NAMES))
+    if not active or invalid:
+        allowed = ", ".join(DETECTOR_NAMES)
+        raise ValueError(f"AI_ACTIVE_DETECTORS must be 'all' or a comma-separated list of: {allowed}")
+    return active
+
+
+ACTIVE_DETECTORS = _parse_active_detectors()
+DETECTOR_DISPLAY_NAMES = {
+    "ppe": "PPE",
+    "scaffolding": "Scaffolding",
+    "protruding": "Protruding hazard",
+    "material": "Material handling",
+}
 PPE_CONFIDENCE_THRESHOLD = 0.35
 HAZARD_CONFIDENCE_THRESHOLD = 0.30
 PPE_CLASS_CONFIDENCE_THRESHOLDS = {
@@ -242,13 +265,14 @@ def _decode_yolo_output(
 async def lifespan(_: FastAPI):
     global model, MODEL_LOAD_ERROR
 
-    warmup_image = Image.new("RGB", (640, 480))
-    try:
-        model = TFLiteYoloModel(MODEL_PATH, PPE_LABELS)
-        model(warmup_image, conf=0.20)
-    except Exception as exc:
-        model = None
-        MODEL_LOAD_ERROR = str(exc)
+    if "ppe" in ACTIVE_DETECTORS:
+        warmup_image = Image.new("RGB", (640, 480))
+        try:
+            model = TFLiteYoloModel(MODEL_PATH, PPE_LABELS)
+            model(warmup_image, conf=0.20)
+        except Exception as exc:
+            model = None
+            MODEL_LOAD_ERROR = str(exc)
     yield
 
 
@@ -277,6 +301,7 @@ class DetectRequest(BaseModel):
     imageBase64: Optional[str] = None
     cameraIp: Optional[str] = None
     source: Optional[str] = None
+    activeDetectors: Optional[List[str]] = None
 
 
 class DetectResponse(BaseModel):
@@ -286,6 +311,7 @@ class DetectResponse(BaseModel):
     alerts: List[Dict[str, Any]] = []
     model: str
     modelErrors: Dict[str, str] = {}
+    activeDetectors: List[str]
 
 
 def _prepare_ppe_image(image: Image.Image) -> Image.Image:
@@ -351,16 +377,25 @@ def _summarize_hazard_results(result, labels, reportable, confidence_threshold=H
     return counts, alerts
 
 
-def _detect_hazards(image):
-    detections = {}
+def _detect_hazards(image, active_detectors=ACTIVE_DETECTORS):
+    detections = {
+        f"{name}Classes": {label: 0 for label in config["labels"]}
+        for name, config in HAZARD_MODEL_CONFIG.items()
+    }
+    detections.update({
+        f"{name}Confidence": 0
+        for name in HAZARD_MODEL_CONFIG
+    })
     alerts = []
     model_errors = {}
 
     with MODEL_INFERENCE_LOCK:
         for name, config in HAZARD_MODEL_CONFIG.items():
+            if name not in active_detectors:
+                continue
             model = _load_hazard_model(name)
             if model is None:
-                model_errors[name] = HAZARD_MODEL_ERRORS[name]
+                model_errors[name] = HAZARD_MODEL_ERRORS.get(name, "Model failed to load")
                 continue
 
             try:
@@ -395,15 +430,24 @@ def _detect_hazards(image):
 
 @app.get("/health")
 def health() -> Dict[str, Any]:
+    active_model_failed = (
+        ("ppe" in ACTIVE_DETECTORS and model is None)
+        or any(name in HAZARD_MODEL_ERRORS for name in ACTIVE_DETECTORS if name != "ppe")
+    )
     return {
         "ok": True,
-        "status": "healthy" if model is not None and not HAZARD_MODEL_ERRORS else "degraded",
+        "status": "degraded" if active_model_failed else "healthy",
         "model_loaded": model is not None,
         "model_path": str(MODEL_PATH),
         "error": MODEL_LOAD_ERROR,
         "person_detection_in_ppe_model": True,
+        "active_detectors": list(ACTIVE_DETECTORS),
+        "active_detector_names": [
+            DETECTOR_DISPLAY_NAMES[name] for name in ACTIVE_DETECTORS
+        ],
         "hazard_models": {
             name: {
+                "active": name in ACTIVE_DETECTORS,
                 "loaded": name in hazard_models,
                 "path": str(config["path"]),
                 "error": HAZARD_MODEL_ERRORS.get(name),
@@ -578,7 +622,18 @@ def _summarize_results(result, people_result=None, frame_size=None) -> Dict[str,
 
 @app.post("/detect", response_model=DetectResponse)
 def detect(request: DetectRequest) -> Dict[str, Any]:
-    if model is None:
+    try:
+        if request.activeDetectors is not None and not request.activeDetectors:
+            raise ValueError("Select at least one active detector")
+        active_detectors = (
+            _parse_active_detectors(",".join(request.activeDetectors))
+            if request.activeDetectors is not None
+            else ACTIVE_DETECTORS
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if "ppe" in active_detectors and model is None:
         raise HTTPException(status_code=500, detail=f"AI model failed to load: {MODEL_LOAD_ERROR}")
 
     if not request.imageUrl and not request.imageBase64:
@@ -592,15 +647,23 @@ def detect(request: DetectRequest) -> Dict[str, Any]:
 
         image = _prepare_ppe_image(image)
         with MODEL_INFERENCE_LOCK:
-            result = model(
+            detections = {}
+            alerts = []
+            if "ppe" in active_detectors:
+                result = model(image, conf=0.20)[0]
+                detections, alerts = _summarize_results(
+                    result,
+                    frame_size=image.size,
+                )
+            else:
+                detections, _ = _summarize_results(
+                    SimpleNamespace(boxes=[], names={}),
+                    frame_size=image.size,
+                )
+            hazard_detections, hazard_alerts, model_errors = _detect_hazards(
                 image,
-                conf=0.20,
-            )[0]
-            detections, alerts = _summarize_results(
-                result,
-                frame_size=image.size,
+                active_detectors,
             )
-            hazard_detections, hazard_alerts, model_errors = _detect_hazards(image)
         detections.update(hazard_detections)
         alerts.extend(hazard_alerts)
         return {
@@ -610,6 +673,7 @@ def detect(request: DetectRequest) -> Dict[str, Any]:
             "alerts": alerts,
             "model": str(MODEL_PATH.name),
             "modelErrors": model_errors,
+            "activeDetectors": list(active_detectors),
         }
     except HTTPException:
         raise

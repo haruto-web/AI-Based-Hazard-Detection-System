@@ -185,6 +185,18 @@ class DecodeYoloOutputTests(unittest.TestCase):
 
 
 class SummarizeHazardResultsTests(unittest.TestCase):
+    def test_active_detector_setting_accepts_single_and_combined_modes(self):
+        self.assertEqual(app._parse_active_detectors("ppe"), ("ppe",))
+        self.assertEqual(
+            app._parse_active_detectors("ppe, scaffolding"),
+            ("ppe", "scaffolding"),
+        )
+        self.assertEqual(app._parse_active_detectors("all"), app.DETECTOR_NAMES)
+
+    def test_active_detector_setting_rejects_unknown_names(self):
+        with self.assertRaisesRegex(ValueError, "AI_ACTIVE_DETECTORS"):
+            app._parse_active_detectors("ppe,unknown")
+
     def test_counts_material_classes_but_only_reports_messy(self):
         result = SimpleNamespace(
             boxes=[
@@ -249,6 +261,25 @@ class SummarizeHazardResultsTests(unittest.TestCase):
         self.assertEqual([alert["label"] for alert in alerts], ["Messy"])
         self.assertEqual(errors, {})
 
+    def test_only_loads_selected_hazard_models(self):
+        result = SimpleNamespace(boxes=[], names={0: "Organized", 1: "Messy"})
+        fake_model = lambda *_args, **_kwargs: [result]
+        with (
+            patch.object(app, "_load_hazard_model", return_value=fake_model) as load_model,
+            patch.dict(app.HAZARD_MODEL_ERRORS, {}, clear=True),
+        ):
+            detections, alerts, errors = app._detect_hazards(
+                Image.new("RGB", (20, 20)),
+                active_detectors=("material",),
+            )
+
+        load_model.assert_called_once_with("material")
+        self.assertEqual(detections["scaffoldingClasses"]["No Base"], 0)
+        self.assertEqual(detections["protrudingClasses"]["Potruding Hazard"], 0)
+        self.assertEqual(detections["materialClasses"]["Messy"], 0)
+        self.assertEqual(alerts, [])
+        self.assertEqual(errors, {})
+
 
 class ModelStartupTests(unittest.IsolatedAsyncioTestCase):
     async def test_tflite_runtime_failure_is_reported_without_stopping_service(self):
@@ -268,6 +299,45 @@ class ModelStartupTests(unittest.IsolatedAsyncioTestCase):
             app.DEFAULT_MODEL_PATH,
             app.ROOT_DIR / "hazora-dashboard" / "public" / "models" / "ppe" / "yolov8n.tflite",
         )
+
+    def test_detect_only_runs_the_active_detector_selection(self):
+        image = Image.new("RGB", (20, 20))
+        with (
+            patch.object(app, "ACTIVE_DETECTORS", ("ppe", "scaffolding", "protruding", "material")),
+            patch.object(app, "model", None),
+            patch.object(app, "_read_image_from_base64", return_value=image),
+            patch.object(
+                app,
+                "_detect_hazards",
+                return_value=(
+                    {
+                        "scaffoldingClasses": {"No Base": 0},
+                        "scaffoldingConfidence": 0,
+                        "noBase": 0,
+                        "protrudingClasses": {"Potruding Hazard": 0, "Safety Cap": 0},
+                        "protrudingConfidence": 0,
+                        "protrudingHazardCount": 0,
+                        "materialClasses": {"Organized": 0, "Messy": 0},
+                        "materialConfidence": 0,
+                        "messyMaterialAreas": 0,
+                    },
+                    [],
+                    {},
+                ),
+            ) as detect_hazards,
+        ):
+            response = app.detect(
+                app.DetectRequest(
+                    imageBase64="image",
+                    activeDetectors=["scaffolding"],
+                )
+            )
+
+        detect_hazards.assert_called_once_with(image, ("scaffolding",))
+        self.assertEqual(response["activeDetectors"], ["scaffolding"])
+        self.assertIn("AI analysis complete", response["status"])
+        self.assertEqual(response["detections"]["persons"], 0)
+        self.assertEqual(response["detections"]["noBase"], 0)
 
 
 if __name__ == "__main__":

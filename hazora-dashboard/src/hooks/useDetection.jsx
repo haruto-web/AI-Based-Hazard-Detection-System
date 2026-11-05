@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { createIncidentReport, getIncidents } from '../utils/incidents';
 import { useNotifications } from '../context/NotificationContext';
 import { useAuth } from '../context/AuthContext';
+import { canManageSites } from '../config/roles';
 import {
   buildCaptureUrl,
   createPersonTracker,
@@ -36,6 +37,8 @@ const PPE_FRAMES_TO_REPORT = 5;
 const DETECTION_INTERVAL_MS = 2000;
 const PERSON_DETECTION_INTERVAL_MS = 60000;
 const AI_SERVICE_URL = (import.meta.env.VITE_AI_API_URL || '').replace(/\/$/, '');
+const AVAILABLE_DETECTORS = ['ppe', 'scaffolding', 'protruding', 'material'];
+const DETECTOR_MODE_STORAGE_PREFIX = 'hazora_detection_mode_';
 
 export function buildStreamUrl(value) {
   if (!value) return '';
@@ -75,7 +78,7 @@ async function captureFullFrameImage(captureUrl) {
   return canvas.toDataURL('image/jpeg', 0.6);
 }
 
-export function useDetection(cameraIP, isConnected, siteLocation = '') {
+export function useDetection(cameraIP, isConnected, siteLocation = '', userRole = '') {
   const canvasRef = useRef(null);
   const timerRef = useRef(null);
   const inferenceInFlightRef = useRef(false);
@@ -96,6 +99,22 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
   const { addNotification } = useNotifications();
   const { user } = useAuth();
   const userId = user?.uid;
+  const detectorModeStorageKey = `${DETECTOR_MODE_STORAGE_PREFIX}${userId || 'local'}`;
+  const [activeDetectors, setActiveDetectors] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(detectorModeStorageKey) || 'null');
+      const validSaved = Array.isArray(saved)
+        && saved.length > 0
+        && saved.every((name) => AVAILABLE_DETECTORS.includes(name));
+      if (validSaved) return saved;
+    } catch {
+      // Use the service's configured mode when it is available.
+    }
+    return AI_SERVICE_URL ? null : AVAILABLE_DETECTORS;
+  });
+  const [detectorModeReady, setDetectorModeReady] = useState(
+    () => !AI_SERVICE_URL || Boolean(activeDetectors),
+  );
   const [ppeModel, setPpeModel] = useState(null);
   const [scaffoldingModel, setScaffoldingModel] = useState(null);
   const [protrudingModel, setProtrudingModel] = useState(null);
@@ -136,6 +155,49 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
   const modelLoadStartedRef = useRef(false);
   const faceModelRef = useRef(null);
   const faceModelLoadPromiseRef = useRef(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!AI_SERVICE_URL || activeDetectors) return undefined;
+
+    fetch(`${AI_SERVICE_URL}/health`)
+      .then((response) => {
+        if (!response.ok) throw new Error(`AI service returned ${response.status}`);
+        return response.json();
+      })
+      .then((health) => {
+        if (cancelled) return;
+        setActiveDetectors(
+          Array.isArray(health.active_detectors) && health.active_detectors.length
+            ? health.active_detectors
+            : AVAILABLE_DETECTORS,
+        );
+        setDetectorModeReady(true);
+      })
+      .catch((modeError) => {
+        if (cancelled) return;
+        console.warn('Could not load active detector mode:', modeError?.message || modeError);
+        setActiveDetectors(AVAILABLE_DETECTORS);
+        setDetectorModeReady(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeDetectors, detectorModeStorageKey]);
+
+  const updateActiveDetectors = useCallback((nextDetectors) => {
+    if (!Array.isArray(nextDetectors) || nextDetectors.length === 0) return;
+    const validDetectors = [...new Set(nextDetectors)]
+      .filter((name) => AVAILABLE_DETECTORS.includes(name));
+    if (!validDetectors.length) return;
+    setActiveDetectors(validDetectors);
+    try {
+      localStorage.setItem(detectorModeStorageKey, JSON.stringify(validDetectors));
+    } catch (modeError) {
+      console.warn('Could not save detector mode:', modeError?.message || modeError);
+    }
+  }, [detectorModeStorageKey]);
 
   async function loadModels() {
     if (modelLoadPromiseRef.current) return modelLoadPromiseRef.current;
@@ -317,6 +379,7 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
           imageBase64,
           cameraIp: cameraIP,
           source: 'dashboard',
+          ...(activeDetectors?.length ? { activeDetectors } : {}),
         }),
       });
 
@@ -331,12 +394,30 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
       const hasDetectionSummary = payload.detections &&
         typeof payload.detections === 'object' &&
         !Array.isArray(payload.detections);
+      const responseActiveDetectors = Array.isArray(payload.activeDetectors)
+        ? payload.activeDetectors
+        : (activeDetectors || AVAILABLE_DETECTORS);
+      if (!activeDetectors && responseActiveDetectors.length) {
+        updateActiveDetectors(responseActiveDetectors);
+      }
+      const activeDetectorNames = {
+        ppe: 'PPE',
+        scaffolding: 'Scaffolding',
+        protruding: 'Protruding hazard',
+        material: 'Material handling',
+      };
+      const activeDetectorSummary = responseActiveDetectors
+        .map((name) => activeDetectorNames[name])
+        .filter(Boolean)
+        .join(', ');
       const detections = hasDetectionSummary
-        ? stabilizePpeDetections(
-          payload.detections,
-          backendPpePresenceRef.current,
-          cameraIP,
-        )
+        ? (responseActiveDetectors.includes('ppe')
+          ? stabilizePpeDetections(
+            payload.detections,
+            backendPpePresenceRef.current,
+            cameraIP,
+          )
+          : payload.detections)
         : {};
       if (detections) {
         setDetections((previous) => ({
@@ -525,13 +606,23 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
       const modelErrors = payload.modelErrors && Object.entries(payload.modelErrors)
         .map(([name, message]) => `${name}: ${message}`)
         .join('; ');
-      setStatus(`${backendStatus} • ${backendSummary}${modelErrors ? ` • Model errors: ${modelErrors}` : ''}`);
+      setStatus(
+        `${backendStatus} • Active detectors: ${activeDetectorSummary || 'none'} • ${backendSummary}${modelErrors ? ` • Model errors: ${modelErrors}` : ''}`,
+      );
       return true;
     } catch (error) {
       console.warn('Local AI service request failed:', error?.message || error);
       return false;
     }
-  }, [addNotification, cameraIP, captureFaceEvidence, siteLocation, userId]);
+  }, [
+    activeDetectors,
+    addNotification,
+    cameraIP,
+    captureFaceEvidence,
+    siteLocation,
+    updateActiveDetectors,
+    userId,
+  ]);
 
   const detectFrame = useCallback(async () => {
     const now = Date.now();
@@ -1128,6 +1219,10 @@ export function useDetection(cameraIP, isConnected, siteLocation = '') {
     status,
     detections,
     detecting,
+    activeDetectors: activeDetectors || AVAILABLE_DETECTORS,
+    detectorModeReady,
+    canManageDetectorMode: canManageSites(userRole) && Boolean(AI_SERVICE_URL),
+    updateActiveDetectors,
     toggleDetection,
     handleRetry: () => {
       scaffoldingModelLoadPromiseRef.current = null;

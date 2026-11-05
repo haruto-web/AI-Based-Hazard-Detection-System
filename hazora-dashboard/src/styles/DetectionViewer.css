@@ -8,6 +8,15 @@
 .detection-toggle.active { background: var(--accent); color: #ffffff; }
 .detection-toggle:disabled { opacity: 0.5; cursor: not-allowed; }
 
+.detector-mode-settings { margin: 0 0 0.85rem; padding: 0.6rem 0.7rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); }
+.detector-mode-settings summary { color: var(--text-primary); font-size: 0.75rem; font-weight: 700; cursor: pointer; }
+.detector-mode-settings p { margin: 0.5rem 0; color: var(--text-secondary); font-size: 0.7rem; }
+.detector-mode-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.4rem; }
+.detector-mode-options label { display: flex; align-items: center; gap: 0.35rem; color: var(--text-primary); font-size: 0.72rem; }
+.detector-mode-options input { accent-color: var(--accent); }
+.detector-mode-all { margin-top: 0.55rem; padding: 0.35rem 0.55rem; border: 1px solid var(--border); border-radius: 5px; background: var(--bg-card); color: var(--text-primary); font-size: 0.7rem; cursor: pointer; }
+.detector-mode-all:disabled { opacity: 0.5; cursor: not-allowed; }
+
 .detection-error { color: var(--error); font-size: 0.8rem; margin-bottom: 0.5rem; }
 
 .detection-panel { display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 0.75rem; }

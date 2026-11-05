@@ -44,7 +44,7 @@ export default function Dashboard() {
 
   // Detection is owned here for the AI Detection panel. The site location (if
   // known) is stamped on auto-captured violation images for the gallery.
-  const detection = useDetection(cameraIP, connectedCount > 0, userSite);
+  const detection = useDetection(cameraIP, connectedCount > 0, userSite, userRole);
 
   function getCameraWebsite(camera) {
     if (!camera) return '';

@@ -18,9 +18,20 @@ export default function DetectionViewerContent({
   status,
   detections,
   detecting,
+  activeDetectors = [],
+  detectorModeReady = false,
+  canManageDetectorMode = false,
+  updateActiveDetectors,
   toggleDetection,
   handleRetry,
 }) {
+  const detectorOptions = [
+    ['ppe', 'PPE'],
+    ['scaffolding', 'Scaffolding'],
+    ['protruding', 'Protruding hazard'],
+    ['material', 'Material handling'],
+  ];
+
   return (
     <div className="detection-viewer">
       <div className="detection-header">
@@ -33,6 +44,39 @@ export default function DetectionViewerContent({
           {loading ? 'Loading models...' : detecting ? 'Stop Detection' : 'Start Detection'}
         </button>
       </div>
+
+      {canManageDetectorMode && (
+        <details className="detector-mode-settings">
+          <summary>Operator detector settings</summary>
+          <p>Choose which detectors run. The active selection is shown in detection status.</p>
+          <div className="detector-mode-options" role="group" aria-label="Active AI detectors">
+            {detectorOptions.map(([name, label]) => (
+              <label key={name}>
+                <input
+                  type="checkbox"
+                  checked={activeDetectors.includes(name)}
+                  disabled={!detectorModeReady}
+                  onChange={() => {
+                    const next = activeDetectors.includes(name)
+                      ? activeDetectors.filter((item) => item !== name)
+                      : [...activeDetectors, name];
+                    updateActiveDetectors(next);
+                  }}
+                />
+                {label}
+              </label>
+            ))}
+          </div>
+          <button
+            type="button"
+            className="detector-mode-all"
+            disabled={!detectorModeReady}
+            onClick={() => updateActiveDetectors(detectorOptions.map(([name]) => name))}
+          >
+            Run all detectors
+          </button>
+        </details>
+      )}
 
       {error && (
         <div className="detection-error-block">

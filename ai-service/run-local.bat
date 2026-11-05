@@ -47,7 +47,11 @@ if errorlevel 1 (
     )
 )
 
+if exist "local-settings.bat" call "local-settings.bat"
+if not defined AI_ACTIVE_DETECTORS set "AI_ACTIVE_DETECTORS=all"
+
 echo.
+echo Active detectors: %AI_ACTIVE_DETECTORS%
 echo Starting the local AI service at http://localhost:8001
 echo Keep this window open while using the local dashboard.
 echo Press Ctrl+C to stop the service.
