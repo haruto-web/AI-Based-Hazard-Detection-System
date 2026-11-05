@@ -33,6 +33,49 @@ export const PPE_HAZARD_INFO = {
   },
 };
 
+export function buildScaffoldingHazardReport({ affectedCount, cameraSource }) {
+  const scaffoldSections = `${affectedCount} scaffolding section${affectedCount === 1 ? '' : 's'}`;
+  const location = cameraSource ? ` on camera ${cameraSource}` : '';
+  const hazardType = 'Scaffolding Missing Base';
+  const action = 'Stop use of the affected scaffold and have a competent person install and verify a proper base before work resumes.';
+
+  return {
+    hazardType,
+    description: `${scaffoldSections}${location} detected without a required base. An unstable scaffold can shift or collapse and cause serious injury.`,
+    precautions: `${action} Inspect the scaffold foundation and all supporting components before allowing access.`,
+    severity: 'high',
+    notificationMessage: `${scaffoldSections} detected without a base${location}. ${action}`,
+  };
+}
+
+export function buildProtrudingHazardReport({ affectedCount, cameraSource }) {
+  const hazards = `${affectedCount} protruding hazard${affectedCount === 1 ? '' : 's'}`;
+  const location = cameraSource ? ` on camera ${cameraSource}` : '';
+  const action = 'Secure, remove, or clearly guard the protruding object and keep workers away until the area is safe.';
+
+  return {
+    hazardType: 'Protruding Object',
+    description: `${hazards}${location} detected in the work area. Unprotected protrusions can cause trip, puncture, or impact injuries.`,
+    precautions: `${action} Inspect the area and install suitable protective caps or barriers where removal is not possible.`,
+    severity: 'high',
+    notificationMessage: `${hazards} detected${location}. ${action}`,
+  };
+}
+
+export function buildMaterialHandlingHazardReport({ affectedCount, cameraSource }) {
+  const areas = `${affectedCount} material-handling area${affectedCount === 1 ? '' : 's'}`;
+  const location = cameraSource ? ` on camera ${cameraSource}` : '';
+  const action = 'Pause work in the affected area and organize, secure, and safely stack the materials before handling continues.';
+
+  return {
+    hazardType: 'Disorganized Material Handling',
+    description: `${areas}${location} detected with messy material storage. Disorganized or unsecured materials can obstruct walkways, fall, or create trip and impact hazards.`,
+    precautions: `${action} Keep access paths clear and verify that stored materials are stable.`,
+    severity: 'high',
+    notificationMessage: `${areas} detected with messy material storage${location}. ${action}`,
+  };
+}
+
 function pluralizeWorkers(count) {
   return `${count} worker${count === 1 ? '' : 's'}`;
 }

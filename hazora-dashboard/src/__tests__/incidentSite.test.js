@@ -6,6 +6,13 @@ describe('incident site location', () => {
     expect(normalizeIncident({ location: 'North Plant' }).site).toBe('North Plant');
   });
 
+  it('preserves zero detected workers for non-person hazards', () => {
+    expect(normalizeIncident({
+      hazardType: 'Scaffolding Missing Base',
+      detectedWorkers: 0,
+    }).detectedWorkers).toBe(0);
+  });
+
   it('includes the site in exported incident CSV rows', () => {
     const csv = buildIncidentCsv([{
       date: '10/03/2026',

@@ -4,6 +4,9 @@ import * as cocoSsd from '@tensorflow-models/coco-ssd';
 import * as blazeface from '@tensorflow-models/blazeface';
 
 export const PPE_MODEL_URL = '/models/ppe/yolov8n.tflite';
+export const SCAFFOLDING_MODEL_URL = '/models/scaffolding/scaffolding1.tflite';
+export const PROTRUDING_MODEL_URL = '/models/protruding/protruding.tflite';
+export const MATERIAL_MODEL_URL = '/models/material/material.tflite';
 export const PPE_LABELS = [
   'Safety Helmet',
   'Safety Vest',
@@ -13,8 +16,30 @@ export const PPE_LABELS = [
   'No Safety Vest',
   'No Safety Shoes',
 ];
+export const SCAFFOLDING_LABELS = [
+  'Standard Scaffolding Base',
+  'Diagonal Ridger Brace',
+  'Scaffolding',
+  'CrossRidge Brace',
+  'Standard Scaffolding Ladder',
+  'No Base',
+];
+export const PROTRUDING_LABELS = [
+  'Potruding Hazard',
+  'Safety Cap',
+];
+export const MATERIAL_LABELS = [
+  'Organized',
+  'Messy',
+];
 export const PPE_INPUT_SIZE = 640;
+export const SCAFFOLDING_INPUT_SIZE = 640;
+export const PROTRUDING_INPUT_SIZE = 640;
+export const MATERIAL_INPUT_SIZE = 640;
 export const PPE_CONFIDENCE_THRESHOLD = 0.56;
+export const SCAFFOLDING_CONFIDENCE_THRESHOLD = 0.30;
+export const PROTRUDING_CONFIDENCE_THRESHOLD = 0.30;
+export const MATERIAL_CONFIDENCE_THRESHOLD = 0.30;
 export const PPE_CLASS_CONFIDENCE_THRESHOLDS = {
   'Safety Helmet': PPE_CONFIDENCE_THRESHOLD,
   'Safety Vest': 0.20,
@@ -28,8 +53,8 @@ export const PPE_IOU_THRESHOLD = 0.70;
 export const PPE_DETECTION_GRACE_MS = 5000;
 const TFLITE_WASM_PATH = '/tflite/';
 
-// Logged once so the real YOLOv8 output tensor layout can be verified in the console.
-let outputShapeLogged = false;
+// Log each model's YOLOv8 output tensor layout once for export verification.
+const outputShapesLogged = new Set();
 
 export function buildCaptureUrl(value) {
   if (!value) return '';
@@ -88,6 +113,30 @@ export async function loadPpeDetectionModels() {
     personModel,
     ppeLabels: PPE_LABELS,
   };
+}
+
+export async function loadScaffoldingDetectionModel() {
+  await tf.ready();
+  tflite.setWasmPath(TFLITE_WASM_PATH);
+  return tflite.loadTFLiteModel(SCAFFOLDING_MODEL_URL, {
+    numThreads: Math.max(1, Math.min(2, Math.floor((navigator.hardwareConcurrency || 2) / 2))),
+  });
+}
+
+export async function loadProtrudingDetectionModel() {
+  await tf.ready();
+  tflite.setWasmPath(TFLITE_WASM_PATH);
+  return tflite.loadTFLiteModel(PROTRUDING_MODEL_URL, {
+    numThreads: Math.max(1, Math.min(2, Math.floor((navigator.hardwareConcurrency || 2) / 2))),
+  });
+}
+
+export async function loadMaterialDetectionModel() {
+  await tf.ready();
+  tflite.setWasmPath(TFLITE_WASM_PATH);
+  return tflite.loadTFLiteModel(MATERIAL_MODEL_URL, {
+    numThreads: Math.max(1, Math.min(2, Math.floor((navigator.hardwareConcurrency || 2) / 2))),
+  });
 }
 
 export async function loadFaceDetectionModel() {
@@ -169,7 +218,7 @@ function iou(a, b) {
   return union > 0 ? intersection / union : 0;
 }
 
-function nonMaximumSuppression(detections) {
+function nonMaximumSuppression(detections, iouThreshold = PPE_IOU_THRESHOLD) {
   const sorted = [...detections].sort((a, b) => b.score - a.score);
   const kept = [];
 
@@ -177,7 +226,7 @@ function nonMaximumSuppression(detections) {
     const best = sorted.shift();
     kept.push(best);
     for (let index = sorted.length - 1; index >= 0; index -= 1) {
-      if (sorted[index].label === best.label && iou(sorted[index].box, best.box) > PPE_IOU_THRESHOLD) {
+      if (sorted[index].label === best.label && iou(sorted[index].box, best.box) > iouThreshold) {
         sorted.splice(index, 1);
       }
     }
@@ -186,8 +235,12 @@ function nonMaximumSuppression(detections) {
   return kept;
 }
 
-export function parseYoloOutput(values, shape, canvasWidth, canvasHeight, imageTransform = null) {
-  const channels = 4 + PPE_LABELS.length;
+export function parseYoloOutput(values, shape, canvasWidth, canvasHeight, imageTransform = null, options = {}) {
+  const labels = options.labels || PPE_LABELS;
+  const inputSize = options.inputSize || PPE_INPUT_SIZE;
+  const confidenceThreshold = options.confidenceThreshold ?? PPE_CONFIDENCE_THRESHOLD;
+  const classThresholds = options.classThresholds || PPE_CLASS_CONFIDENCE_THRESHOLDS;
+  const channels = 4 + labels.length;
   // Layout A (channels-first): [1, channels, N]  -> value at [c * N + i]
   // Layout B (channels-last):  [1, N, channels]  -> value at [i * channels + c]
   const channelsFirst = shape[shape.length - 2] === channels;
@@ -212,7 +265,7 @@ export function parseYoloOutput(values, shape, canvasWidth, canvasHeight, imageT
   for (let index = 0; index < candidateCount; index += 1) {
     let bestClass = -1;
     let bestScore = 0;
-    for (let classIndex = 0; classIndex < PPE_LABELS.length; classIndex += 1) {
+    for (let classIndex = 0; classIndex < labels.length; classIndex += 1) {
       const score = getValue(4 + classIndex, index);
       if (score > bestScore) {
         bestScore = score;
@@ -220,10 +273,10 @@ export function parseYoloOutput(values, shape, canvasWidth, canvasHeight, imageT
       }
     }
 
-    const classThreshold = PPE_CLASS_CONFIDENCE_THRESHOLDS[PPE_LABELS[bestClass]] ?? PPE_CONFIDENCE_THRESHOLD;
+    const classThreshold = classThresholds[labels[bestClass]] ?? confidenceThreshold;
     if (bestClass < 0 || bestScore < classThreshold) continue;
 
-    const coordinateScale = normalized ? PPE_INPUT_SIZE : 1;
+    const coordinateScale = normalized ? inputSize : 1;
     const centerX = getValue(0, index) * coordinateScale;
     const centerY = getValue(1, index) * coordinateScale;
     const width = getValue(2, index) * coordinateScale;
@@ -234,16 +287,16 @@ export function parseYoloOutput(values, shape, canvasWidth, canvasHeight, imageT
     const inputY2 = centerY + height / 2;
     const x1 = imageTransform
       ? (inputX1 - imageTransform.padX) / imageTransform.scaleX
-      : inputX1 * canvasWidth / PPE_INPUT_SIZE;
+      : inputX1 * canvasWidth / inputSize;
     const y1 = imageTransform
       ? (inputY1 - imageTransform.padY) / imageTransform.scaleY
-      : inputY1 * canvasHeight / PPE_INPUT_SIZE;
+      : inputY1 * canvasHeight / inputSize;
     const x2 = imageTransform
       ? (inputX2 - imageTransform.padX) / imageTransform.scaleX
-      : inputX2 * canvasWidth / PPE_INPUT_SIZE;
+      : inputX2 * canvasWidth / inputSize;
     const y2 = imageTransform
       ? (inputY2 - imageTransform.padY) / imageTransform.scaleY
-      : inputY2 * canvasHeight / PPE_INPUT_SIZE;
+      : inputY2 * canvasHeight / inputSize;
     const x = Math.max(0, Math.min(canvasWidth, x1));
     const y = Math.max(0, Math.min(canvasHeight, y1));
     const right = Math.max(0, Math.min(canvasWidth, x2));
@@ -251,7 +304,7 @@ export function parseYoloOutput(values, shape, canvasWidth, canvasHeight, imageT
     if (right <= x || bottom <= y) continue;
 
     detections.push({
-      label: PPE_LABELS[bestClass],
+      label: labels[bestClass],
       score: bestScore,
       box: {
         x,
@@ -262,7 +315,7 @@ export function parseYoloOutput(values, shape, canvasWidth, canvasHeight, imageT
     });
   }
 
-  return nonMaximumSuppression(detections);
+  return nonMaximumSuppression(detections, options.iouThreshold);
 }
 
 export function stabilizePpeDetections(
@@ -306,9 +359,9 @@ export function stabilizePpeDetections(
 // Some YOLOv8 TFLite exports expect NCHW ([1,3,H,W]) instead of the NHWC
 // ([1,H,W,3]) that tf.browser.fromPixels produces. Inspect the model's declared
 // input shape and transpose only when the channel dimension is at index 1.
-function modelExpectsChannelsFirst(ppeModel) {
+function modelExpectsChannelsFirst(model) {
   try {
-    const inputs = ppeModel.inputs || ppeModel.modelRunner?.inputs;
+    const inputs = model.inputs || model.modelRunner?.inputs;
     const shape = inputs?.[0]?.shape;
     // NCHW looks like [1, 3, 640, 640]; NHWC looks like [1, 640, 640, 3].
     if (Array.isArray(shape) && shape.length === 4) {
@@ -320,28 +373,37 @@ function modelExpectsChannelsFirst(ppeModel) {
   return false;
 }
 
-export async function detectPpeObjects({ ppeModel, canvas }) {
-  if (!ppeModel || !canvas) return [];
+async function detectYoloObjects({
+  model,
+  canvas,
+  labels,
+  inputSize,
+  confidenceThreshold,
+  classThresholds,
+  iouThreshold,
+  modelName,
+}) {
+  if (!model || !canvas) return [];
 
-  const scale = Math.min(PPE_INPUT_SIZE / canvas.width, PPE_INPUT_SIZE / canvas.height);
+  const scale = Math.min(inputSize / canvas.width, inputSize / canvas.height);
   const resizedWidth = Math.max(1, Math.round(canvas.width * scale));
   const resizedHeight = Math.max(1, Math.round(canvas.height * scale));
-  const padX = Math.floor((PPE_INPUT_SIZE - resizedWidth) / 2);
-  const padY = Math.floor((PPE_INPUT_SIZE - resizedHeight) / 2);
+  const padX = Math.floor((inputSize - resizedWidth) / 2);
+  const padY = Math.floor((inputSize - resizedHeight) / 2);
   const imageTransform = {
     scaleX: resizedWidth / canvas.width,
     scaleY: resizedHeight / canvas.height,
     padX,
     padY,
   };
-  const channelsFirst = modelExpectsChannelsFirst(ppeModel);
+  const channelsFirst = modelExpectsChannelsFirst(model);
   const input = tf.tidy(() => {
     const resized = tf.browser.fromPixels(canvas)
       .resizeBilinear([resizedHeight, resizedWidth])
       .toFloat()
       .div(255);
-    const padBottom = PPE_INPUT_SIZE - resizedHeight - padY;
-    const padRight = PPE_INPUT_SIZE - resizedWidth - padX;
+    const padBottom = inputSize - resizedHeight - padY;
+    const padRight = inputSize - resizedWidth - padX;
     const nhwc = tf.pad(
       resized,
       [[padY, padBottom], [padX, padRight], [0, 0]],
@@ -356,7 +418,7 @@ export async function detectPpeObjects({ ppeModel, canvas }) {
   let transposed = null;
   try {
     try {
-      output = ppeModel.predict(runInput);
+      output = model.predict(runInput);
     } catch (err) {
       // Fallback: if the layout guess was wrong, flip NHWC<->NCHW and retry once.
       if (/shape mismatch/i.test(err?.message || '')) {
@@ -364,25 +426,80 @@ export async function detectPpeObjects({ ppeModel, canvas }) {
           ? runInput.transpose([0, 2, 3, 1]) // NCHW -> NHWC
           : runInput.transpose([0, 3, 1, 2]); // NHWC -> NCHW
         runInput = transposed;
-        output = ppeModel.predict(runInput);
+        output = model.predict(runInput);
       } else {
         throw err;
       }
     }
 
     const shape = output.shape || [];
-    if (!outputShapeLogged) {
+    if (!outputShapesLogged.has(modelName)) {
       // One-time diagnostic so the exported model's real tensor layout is visible.
-      console.info('[PPE] YOLOv8 output shape:', JSON.stringify(shape));
-      outputShapeLogged = true;
+      console.info(`[${modelName}] YOLOv8 output shape:`, JSON.stringify(shape));
+      outputShapesLogged.add(modelName);
     }
     const values = await output.data();
-    return parseYoloOutput(values, shape, canvas.width, canvas.height, imageTransform);
+    return parseYoloOutput(values, shape, canvas.width, canvas.height, imageTransform, {
+      labels,
+      inputSize,
+      confidenceThreshold,
+      classThresholds,
+      iouThreshold,
+    });
   } finally {
     output?.dispose?.();
     transposed?.dispose?.();
     input.dispose();
   }
+}
+
+export async function detectPpeObjects({ ppeModel, canvas }) {
+  return detectYoloObjects({
+    model: ppeModel,
+    canvas,
+    labels: PPE_LABELS,
+    inputSize: PPE_INPUT_SIZE,
+    confidenceThreshold: PPE_CONFIDENCE_THRESHOLD,
+    classThresholds: PPE_CLASS_CONFIDENCE_THRESHOLDS,
+    iouThreshold: PPE_IOU_THRESHOLD,
+    modelName: 'PPE',
+  });
+}
+
+export async function detectScaffoldingObjects({ scaffoldingModel, canvas }) {
+  return detectYoloObjects({
+    model: scaffoldingModel,
+    canvas,
+    labels: SCAFFOLDING_LABELS,
+    inputSize: SCAFFOLDING_INPUT_SIZE,
+    confidenceThreshold: SCAFFOLDING_CONFIDENCE_THRESHOLD,
+    iouThreshold: PPE_IOU_THRESHOLD,
+    modelName: 'Scaffolding',
+  });
+}
+
+export async function detectProtrudingObjects({ protrudingModel, canvas }) {
+  return detectYoloObjects({
+    model: protrudingModel,
+    canvas,
+    labels: PROTRUDING_LABELS,
+    inputSize: PROTRUDING_INPUT_SIZE,
+    confidenceThreshold: PROTRUDING_CONFIDENCE_THRESHOLD,
+    iouThreshold: PPE_IOU_THRESHOLD,
+    modelName: 'Protruding hazard',
+  });
+}
+
+export async function detectMaterialObjects({ materialModel, canvas }) {
+  return detectYoloObjects({
+    model: materialModel,
+    canvas,
+    labels: MATERIAL_LABELS,
+    inputSize: MATERIAL_INPUT_SIZE,
+    confidenceThreshold: MATERIAL_CONFIDENCE_THRESHOLD,
+    iouThreshold: PPE_IOU_THRESHOLD,
+    modelName: 'Material handling',
+  });
 }
 
 export async function detectPersons({ personModel, canvas }) {

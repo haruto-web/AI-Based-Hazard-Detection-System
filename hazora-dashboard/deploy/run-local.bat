@@ -39,13 +39,23 @@ if not exist "node_modules\.bin\vite.cmd" (
     )
 )
 
+REM Start the local AI API in its own window if it is not already running.
+curl.exe --silent --fail --max-time 2 http://localhost:8001/health >nul 2>&1
+if errorlevel 1 (
+    echo Starting the local AI service in a separate window...
+    start "HAZORA Local AI Service" "%ComSpec%" /k ""%~dp0..\..\ai-service\run-local.bat""
+) else (
+    echo Local AI service is already running at http://localhost:8001.
+)
+
 echo.
 echo Starting the local dev server...
 echo.
 echo   1. Make sure this PC is on the SAME Wi-Fi as your ESP32 camera.
 echo   2. When it opens, go to Live Streams and enter the camera IP
 echo      such as 192.168.55.103 then click the arrow to connect.
-echo   3. Press Ctrl+C in this window to stop the server when done.
+echo   3. Keep the AI service window open while using AI detection.
+echo   4. Press Ctrl+C in each window to stop its service.
 echo.
 
 REM --host exposes it on your LAN too, so a phone/tablet on the same

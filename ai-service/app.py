@@ -1,26 +1,61 @@
 import base64
 import io
-import json
 import os
+import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
 from urllib.request import Request, urlopen
 
+import numpy as np
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from PIL import Image, ImageOps, ImageStat
-from ultralytics import YOLO
+from ai_edge_litert.interpreter import Interpreter
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_MODEL_PATH = ROOT_DIR / "hazora-dashboard" / "public" / "models" / "ppe" / "yolov8n.tflite"
-MODEL_DATA_PATH = ROOT_DIR / "ai-service" / "ppe-model.yaml"
 MODEL_PATH = Path(os.environ.get("AI_MODEL_PATH") or DEFAULT_MODEL_PATH)
-DEFAULT_PERSON_MODEL_PATH = ROOT_DIR / "yolov8n.pt"
-PERSON_MODEL_PATH = Path(os.environ.get("AI_PERSON_MODEL_PATH") or DEFAULT_PERSON_MODEL_PATH)
 PERSON_CLASS_ID = 0
+PPE_LABELS = [
+    "Safety Helmet",
+    "Safety Vest",
+    "Safety Shoes",
+    "Person",
+    "No Safety Helmet",
+    "No Safety Vest",
+    "No Safety Shoes",
+]
+YOLO_INPUT_SIZE = 640
+YOLO_IOU_THRESHOLD = 0.70
+HAZARD_MODEL_CONFIG = {
+    "scaffolding": {
+        "path": Path(os.environ.get("AI_SCAFFOLDING_MODEL_PATH") or ROOT_DIR / "hazora-dashboard" / "public" / "models" / "scaffolding" / "scaffolding1.tflite"),
+        "labels": [
+            "Standard Scaffolding Base",
+            "Diagonal Ridger Brace",
+            "Scaffolding",
+            "CrossRidge Brace",
+            "Standard Scaffolding Ladder",
+            "No Base",
+        ],
+        "reportable": {"No Base"},
+    },
+    "protruding": {
+        "path": Path(os.environ.get("AI_PROTRUDING_MODEL_PATH") or ROOT_DIR / "hazora-dashboard" / "public" / "models" / "protruding" / "protruding.tflite"),
+        "labels": ["Potruding Hazard", "Safety Cap"],
+        "reportable": {"Potruding Hazard"},
+    },
+    "material": {
+        "path": Path(os.environ.get("AI_MATERIAL_MODEL_PATH") or ROOT_DIR / "hazora-dashboard" / "public" / "models" / "material" / "material.tflite"),
+        "labels": ["Organized", "Messy"],
+        "reportable": {"Messy"},
+    },
+}
 PPE_CONFIDENCE_THRESHOLD = 0.35
+HAZARD_CONFIDENCE_THRESHOLD = 0.30
 PPE_CLASS_CONFIDENCE_THRESHOLDS = {
     "helmet": PPE_CONFIDENCE_THRESHOLD,
     "vest": 0.20,
@@ -28,22 +63,176 @@ PPE_CLASS_CONFIDENCE_THRESHOLDS = {
 }
 LOW_LIGHT_MEAN_LUMINANCE = 80
 LOW_LIGHT_AUTOCONTRAST_CUTOFF = 1
+hazard_models = {}
+HAZARD_MODEL_ERRORS = {}
+MODEL_INFERENCE_LOCK = threading.RLock()
+model = None
+MODEL_LOAD_ERROR = None
 
-try:
-    model = YOLO(str(MODEL_PATH))
-except Exception as exc:  # pragma: no cover - startup validation path
-    model = None
-    MODEL_LOAD_ERROR = str(exc)
-else:
-    MODEL_LOAD_ERROR = None
 
-try:
-    person_model = YOLO(str(PERSON_MODEL_PATH))
-except Exception as exc:  # pragma: no cover - startup validation path
-    person_model = None
-    PERSON_MODEL_LOAD_ERROR = str(exc)
-else:
-    PERSON_MODEL_LOAD_ERROR = None
+class TFLiteYoloModel:
+    def __init__(self, model_path: Path, labels: List[str]):
+        if not model_path.is_file():
+            raise FileNotFoundError(f"Model file not found: {model_path}")
+        self.labels = labels
+        self.interpreter = Interpreter(model_path=str(model_path), num_threads=2)
+        self.interpreter.allocate_tensors()
+        self.input_detail = self.interpreter.get_input_details()[0]
+        self.output_detail = self.interpreter.get_output_details()[0]
+        self.input_shape = self.input_detail["shape"]
+        if len(self.input_shape) != 4 or self.input_shape[0] != 1:
+            raise ValueError(f"Unsupported model input shape: {self.input_shape}")
+        if self.input_detail["dtype"] != np.float32 or self.output_detail["dtype"] != np.float32:
+            raise ValueError("Only float32 YOLO TFLite models are supported")
+        if int(self.input_shape[1]) == 3:
+            self.input_height = int(self.input_shape[2])
+            self.input_width = int(self.input_shape[3])
+            self.channels_first = True
+        elif int(self.input_shape[3]) == 3:
+            self.input_height = int(self.input_shape[1])
+            self.input_width = int(self.input_shape[2])
+            self.channels_first = False
+        else:
+            raise ValueError(f"Unsupported model input shape: {self.input_shape}")
+
+        self.names = dict(enumerate(labels))
+        self._output_channels_first = None
+        self._candidate_count = None
+        self._validate_output_shape()
+
+    def _validate_output_shape(self):
+        shape = self.output_detail["shape"]
+        if len(shape) != 3 or shape[0] != 1:
+            raise ValueError(f"Unsupported YOLO output shape: {shape}")
+        if int(shape[1]) == 4 + len(self.labels):
+            self._output_channels_first = True
+            self._candidate_count = int(shape[2])
+        elif int(shape[2]) == 4 + len(self.labels):
+            self._output_channels_first = False
+            self._candidate_count = int(shape[1])
+        else:
+            raise ValueError(
+                f"YOLO output channels do not match {len(self.labels)} labels: {shape}"
+            )
+
+    def __call__(self, image: Image.Image, conf: float = 0.20):
+        image_width, image_height = image.size
+        scale = min(
+            self.input_width / image_width,
+            self.input_height / image_height,
+        )
+        resized_width = max(1, round(image_width * scale))
+        resized_height = max(1, round(image_height * scale))
+        pad_x = (self.input_width - resized_width) // 2
+        pad_y = (self.input_height - resized_height) // 2
+
+        resized = image.convert("RGB").resize(
+            (resized_width, resized_height),
+            Image.Resampling.BILINEAR,
+        )
+        letterboxed = Image.new(
+            "RGB",
+            (self.input_width, self.input_height),
+            (114, 114, 114),
+        )
+        letterboxed.paste(resized, (pad_x, pad_y))
+        pixels = np.asarray(letterboxed, dtype=np.float32) / 255.0
+        if self.channels_first:
+            pixels = np.transpose(pixels, (2, 0, 1))
+        tensor = np.ascontiguousarray(np.expand_dims(pixels, axis=0), dtype=np.float32)
+
+        self.interpreter.set_tensor(self.input_detail["index"], tensor)
+        self.interpreter.invoke()
+        output = self.interpreter.get_tensor(self.output_detail["index"])[0]
+        boxes = _decode_yolo_output(
+            output,
+            image.size,
+            scale,
+            pad_x,
+            pad_y,
+            self.input_width,
+            self.input_height,
+            conf,
+            self._output_channels_first,
+            self._candidate_count,
+        )
+        return [SimpleNamespace(boxes=boxes, names=self.names)]
+
+
+def _decode_yolo_output(
+    output,
+    image_size,
+    scale,
+    pad_x,
+    pad_y,
+    input_width,
+    input_height,
+    confidence_threshold,
+    channels_first,
+    candidate_count,
+):
+    image_width, image_height = image_size
+    predictions = output if channels_first else output.T
+    coordinates = predictions[:4]
+    normalized = float(np.max(np.abs(coordinates), initial=0.0)) <= 1.5
+    coordinate_scale_x = input_width if normalized else 1.0
+    coordinate_scale_y = input_height if normalized else 1.0
+    candidates = []
+
+    for candidate_index in range(candidate_count):
+        class_scores = predictions[4:, candidate_index]
+        class_id = int(np.argmax(class_scores))
+        confidence = float(class_scores[class_id])
+        if not np.isfinite(confidence) or confidence < confidence_threshold:
+            continue
+
+        center_x = float(coordinates[0, candidate_index]) * coordinate_scale_x
+        center_y = float(coordinates[1, candidate_index]) * coordinate_scale_y
+        width = float(coordinates[2, candidate_index]) * coordinate_scale_x
+        height = float(coordinates[3, candidate_index]) * coordinate_scale_y
+        left = max(0.0, min(image_width, (center_x - width / 2 - pad_x) / scale))
+        top = max(0.0, min(image_height, (center_y - height / 2 - pad_y) / scale))
+        right = max(0.0, min(image_width, (center_x + width / 2 - pad_x) / scale))
+        bottom = max(0.0, min(image_height, (center_y + height / 2 - pad_y) / scale))
+        if right <= left or bottom <= top:
+            continue
+
+        candidates.append({
+            "class_id": class_id,
+            "confidence": confidence,
+            "coordinates": [left, top, right, bottom],
+        })
+
+    candidates.sort(key=lambda candidate: candidate["confidence"], reverse=True)
+    kept = []
+    while candidates:
+        best = candidates.pop(0)
+        kept.append(best)
+        left, top, right, bottom = best["coordinates"]
+        best_area = (right - left) * (bottom - top)
+        remaining = []
+        for candidate in candidates:
+            if candidate["class_id"] != best["class_id"]:
+                remaining.append(candidate)
+                continue
+            other_left, other_top, other_right, other_bottom = candidate["coordinates"]
+            intersection_width = max(0.0, min(right, other_right) - max(left, other_left))
+            intersection_height = max(0.0, min(bottom, other_bottom) - max(top, other_top))
+            intersection = intersection_width * intersection_height
+            other_area = (other_right - other_left) * (other_bottom - other_top)
+            union = best_area + other_area - intersection
+            if union <= 0 or intersection / union <= YOLO_IOU_THRESHOLD:
+                remaining.append(candidate)
+        candidates = remaining
+
+    return [
+        SimpleNamespace(
+            cls=[np.asarray([candidate["class_id"]])],
+            conf=[np.asarray([candidate["confidence"]])],
+            xyxy=[np.asarray(candidate["coordinates"])],
+        )
+        for candidate in kept
+    ]
 
 
 @asynccontextmanager
@@ -51,26 +240,12 @@ async def lifespan(_: FastAPI):
     global model, MODEL_LOAD_ERROR
 
     warmup_image = Image.new("RGB", (640, 480))
-    if model is not None:
-        try:
-            model(
-                warmup_image,
-                imgsz=640,
-                conf=0.20,
-                data=str(MODEL_DATA_PATH),
-                verbose=False,
-            )
-        except Exception as exc:
-            model = None
-            MODEL_LOAD_ERROR = str(exc)
-    if person_model is not None:
-        person_model(
-            warmup_image,
-            imgsz=640,
-            conf=0.25,
-            classes=[PERSON_CLASS_ID],
-            verbose=False,
-        )
+    try:
+        model = TFLiteYoloModel(MODEL_PATH, PPE_LABELS)
+        model(warmup_image, conf=0.20)
+    except Exception as exc:
+        model = None
+        MODEL_LOAD_ERROR = str(exc)
     yield
 
 
@@ -107,6 +282,7 @@ class DetectResponse(BaseModel):
     detections: Dict[str, Any]
     alerts: List[Dict[str, Any]] = []
     model: str
+    modelErrors: Dict[str, str] = {}
 
 
 def _prepare_ppe_image(image: Image.Image) -> Image.Image:
@@ -126,17 +302,111 @@ def _ppe_confidence_threshold(label: str) -> float:
     return PPE_CLASS_CONFIDENCE_THRESHOLDS["helmet"]
 
 
+def _load_hazard_model(name: str):
+    if name in hazard_models:
+        return hazard_models[name]
+    if name in HAZARD_MODEL_ERRORS:
+        return None
+
+    model_path = HAZARD_MODEL_CONFIG[name]["path"]
+    try:
+        hazard_models[name] = TFLiteYoloModel(
+            model_path,
+            HAZARD_MODEL_CONFIG[name]["labels"],
+        )
+    except Exception as exc:
+        HAZARD_MODEL_ERRORS[name] = str(exc)
+        print(f"Failed to load {name} hazard model at {model_path}: {exc}")
+        return None
+    return hazard_models[name]
+
+
+def _summarize_hazard_results(result, labels, reportable, confidence_threshold=HAZARD_CONFIDENCE_THRESHOLD):
+    counts = {label: 0 for label in labels}
+    alerts = []
+    names = getattr(result, "names", {}) or {}
+
+    for box in getattr(result, "boxes", None) or []:
+        class_id = int(box.cls[0].item())
+        raw_label = str(names.get(class_id, ""))
+        label = next(
+            (known for known in labels if known.lower() == raw_label.lower()),
+            labels[class_id] if 0 <= class_id < len(labels) else raw_label,
+        )
+        confidence = float(box.conf[0].item())
+        if label not in counts or confidence < confidence_threshold:
+            continue
+
+        counts[label] += 1
+        if label in reportable:
+            alerts.append({
+                "label": label,
+                "confidence": round(confidence, 3),
+                "bbox": [round(float(value), 2) for value in box.xyxy[0].tolist()],
+            })
+
+    return counts, alerts
+
+
+def _detect_hazards(image):
+    detections = {}
+    alerts = []
+    model_errors = {}
+
+    with MODEL_INFERENCE_LOCK:
+        for name, config in HAZARD_MODEL_CONFIG.items():
+            model = _load_hazard_model(name)
+            if model is None:
+                model_errors[name] = HAZARD_MODEL_ERRORS[name]
+                continue
+
+            try:
+                result = model(
+                    image,
+                    conf=HAZARD_CONFIDENCE_THRESHOLD,
+                )[0]
+                counts, model_alerts = _summarize_hazard_results(
+                    result,
+                    config["labels"],
+                    config["reportable"],
+                )
+            except Exception as exc:
+                model_errors[name] = str(exc)
+                HAZARD_MODEL_ERRORS[name] = str(exc)
+                print(f"{name.capitalize()} hazard inference failed: {exc}")
+                continue
+
+            detections[f"{name}Classes"] = counts
+            detections[f"{name}Confidence"] = (
+                sum(alert["confidence"] for alert in model_alerts) / len(model_alerts)
+                if model_alerts else 0
+            )
+            HAZARD_MODEL_ERRORS.pop(name, None)
+            alerts.extend({**alert, "model": name} for alert in model_alerts)
+
+    detections["noBase"] = detections.get("scaffoldingClasses", {}).get("No Base", 0)
+    detections["protrudingHazardCount"] = detections.get("protrudingClasses", {}).get("Potruding Hazard", 0)
+    detections["messyMaterialAreas"] = detections.get("materialClasses", {}).get("Messy", 0)
+    return detections, alerts, model_errors
+
+
 @app.get("/health")
 def health() -> Dict[str, Any]:
     return {
         "ok": True,
-        "status": "healthy" if model is not None and person_model is not None else "degraded",
+        "status": "healthy" if model is not None and not HAZARD_MODEL_ERRORS else "degraded",
         "model_loaded": model is not None,
         "model_path": str(MODEL_PATH),
         "error": MODEL_LOAD_ERROR,
-        "person_model_loaded": person_model is not None,
-        "person_model_path": str(PERSON_MODEL_PATH),
-        "person_model_error": PERSON_MODEL_LOAD_ERROR,
+        "person_detection_in_ppe_model": True,
+        "hazard_models": {
+            name: {
+                "loaded": name in hazard_models,
+                "path": str(config["path"]),
+                "error": HAZARD_MODEL_ERRORS.get(name),
+            }
+            for name, config in HAZARD_MODEL_CONFIG.items()
+        },
     }
 
 
@@ -304,7 +574,7 @@ def _summarize_results(result, people_result=None, frame_size=None) -> Dict[str,
 
 
 @app.post("/detect", response_model=DetectResponse)
-async def detect(request: DetectRequest) -> Dict[str, Any]:
+def detect(request: DetectRequest) -> Dict[str, Any]:
     if model is None:
         raise HTTPException(status_code=500, detail=f"AI model failed to load: {MODEL_LOAD_ERROR}")
 
@@ -318,33 +588,25 @@ async def detect(request: DetectRequest) -> Dict[str, Any]:
             image = _read_image_from_url(request.imageUrl)
 
         image = _prepare_ppe_image(image)
-        result = model(
-            image,
-            imgsz=640,
-            conf=0.20,
-            data=str(MODEL_DATA_PATH),
-            verbose=False,
-        )[0]
-        people_result = None
-        if person_model is not None:
-            people_result = person_model(
+        with MODEL_INFERENCE_LOCK:
+            result = model(
                 image,
-                imgsz=640,
-                conf=0.25,
-                classes=[PERSON_CLASS_ID],
-                verbose=False,
+                conf=0.20,
             )[0]
-        detections, alerts = _summarize_results(
-            result,
-            people_result=people_result,
-            frame_size=image.size,
-        )
+            detections, alerts = _summarize_results(
+                result,
+                frame_size=image.size,
+            )
+            hazard_detections, hazard_alerts, model_errors = _detect_hazards(image)
+        detections.update(hazard_detections)
+        alerts.extend(hazard_alerts)
         return {
             "ok": True,
             "status": f"AI analysis complete for {request.cameraIp or request.source or 'camera'}",
             "detections": detections,
             "alerts": alerts,
             "model": str(MODEL_PATH.name),
+            "modelErrors": model_errors,
         }
     except HTTPException:
         raise

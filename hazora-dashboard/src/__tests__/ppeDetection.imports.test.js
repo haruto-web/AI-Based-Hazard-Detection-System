@@ -10,6 +10,15 @@ import {
   PPE_CONFIDENCE_THRESHOLD,
   PPE_DETECTION_GRACE_MS,
   PPE_LABELS,
+  MATERIAL_CONFIDENCE_THRESHOLD,
+  MATERIAL_INPUT_SIZE,
+  MATERIAL_LABELS,
+  PROTRUDING_CONFIDENCE_THRESHOLD,
+  PROTRUDING_INPUT_SIZE,
+  PROTRUDING_LABELS,
+  SCAFFOLDING_CONFIDENCE_THRESHOLD,
+  SCAFFOLDING_INPUT_SIZE,
+  SCAFFOLDING_LABELS,
   stabilizePpeDetections,
 } from '../AI/LM_detection/ppeDetection';
 
@@ -164,6 +173,154 @@ describe('YOLOv8 output parsing', () => {
 
     expect(parseYoloOutput(vestValues, [1, 1, channels], 100, 100)).toHaveLength(1);
     expect(parseYoloOutput(helmetValues, [1, 1, channels], 100, 100)).toHaveLength(0);
+  });
+});
+
+describe('protruding hazard YOLOv8 output parsing', () => {
+  const channels = 4 + PROTRUDING_LABELS.length;
+
+  it('uses the protruding model classes and a 30% confidence threshold', () => {
+    expect(PROTRUDING_LABELS).toEqual(['Potruding Hazard', 'Safety Cap']);
+    expect(PROTRUDING_CONFIDENCE_THRESHOLD).toBe(0.3);
+
+    const values = new Float32Array(channels);
+    values[0] = 0.5;
+    values[1] = 0.5;
+    values[2] = 0.2;
+    values[3] = 0.4;
+    values[4] = PROTRUDING_CONFIDENCE_THRESHOLD;
+
+    const result = parseYoloOutput(values, [1, channels, 1], 100, 100, null, {
+      labels: PROTRUDING_LABELS,
+      inputSize: PROTRUDING_INPUT_SIZE,
+      confidenceThreshold: PROTRUDING_CONFIDENCE_THRESHOLD,
+    });
+
+    expect(result).toHaveLength(1);
+    expect(result[0].label).toBe('Potruding Hazard');
+    expect(result[0].score).toBeCloseTo(0.3);
+  });
+
+  it('rejects protruding detections below the 30% confidence threshold', () => {
+    const values = new Float32Array(channels);
+    values[0] = 0.5;
+    values[1] = 0.5;
+    values[2] = 0.2;
+    values[3] = 0.4;
+    values[4] = PROTRUDING_CONFIDENCE_THRESHOLD - 0.01;
+
+    expect(parseYoloOutput(values, [1, channels, 1], 100, 100, null, {
+      labels: PROTRUDING_LABELS,
+      inputSize: PROTRUDING_INPUT_SIZE,
+      confidenceThreshold: PROTRUDING_CONFIDENCE_THRESHOLD,
+    })).toHaveLength(0);
+  });
+
+  it('recognizes the safety-cap class at the same confidence threshold', () => {
+    const values = new Float32Array(channels);
+    values[0] = 0.5;
+    values[1] = 0.5;
+    values[2] = 0.2;
+    values[3] = 0.4;
+    values[4 + PROTRUDING_LABELS.indexOf('Safety Cap')] = PROTRUDING_CONFIDENCE_THRESHOLD;
+
+    const result = parseYoloOutput(values, [1, channels, 1], 100, 100, null, {
+      labels: PROTRUDING_LABELS,
+      inputSize: PROTRUDING_INPUT_SIZE,
+      confidenceThreshold: PROTRUDING_CONFIDENCE_THRESHOLD,
+    });
+
+    expect(result).toHaveLength(1);
+    expect(result[0].label).toBe('Safety Cap');
+  });
+});
+
+describe('material-handling YOLOv8 output parsing', () => {
+  const channels = 4 + MATERIAL_LABELS.length;
+
+  it('uses the material-handling classes and a 30% confidence threshold', () => {
+    expect(MATERIAL_LABELS).toEqual(['Organized', 'Messy']);
+    expect(MATERIAL_CONFIDENCE_THRESHOLD).toBe(0.3);
+
+    const values = new Float32Array(channels);
+    values[0] = 0.5;
+    values[1] = 0.5;
+    values[2] = 0.2;
+    values[3] = 0.4;
+    values[4 + MATERIAL_LABELS.indexOf('Messy')] = MATERIAL_CONFIDENCE_THRESHOLD;
+
+    const result = parseYoloOutput(values, [1, channels, 1], 100, 100, null, {
+      labels: MATERIAL_LABELS,
+      inputSize: MATERIAL_INPUT_SIZE,
+      confidenceThreshold: MATERIAL_CONFIDENCE_THRESHOLD,
+    });
+
+    expect(result).toHaveLength(1);
+    expect(result[0].label).toBe('Messy');
+    expect(result[0].score).toBeCloseTo(MATERIAL_CONFIDENCE_THRESHOLD);
+  });
+
+  it('rejects material-handling detections below the 30% confidence threshold', () => {
+    const values = new Float32Array(channels);
+    values[0] = 0.5;
+    values[1] = 0.5;
+    values[2] = 0.2;
+    values[3] = 0.4;
+    values[4 + MATERIAL_LABELS.indexOf('Messy')] = MATERIAL_CONFIDENCE_THRESHOLD - 0.01;
+
+    expect(parseYoloOutput(values, [1, channels, 1], 100, 100, null, {
+      labels: MATERIAL_LABELS,
+      inputSize: MATERIAL_INPUT_SIZE,
+      confidenceThreshold: MATERIAL_CONFIDENCE_THRESHOLD,
+    })).toHaveLength(0);
+  });
+});
+
+describe('scaffolding YOLOv8 output parsing', () => {
+  const channels = 4 + SCAFFOLDING_LABELS.length;
+
+  it('uses the scaffold model classes and a 30% confidence threshold', () => {
+    expect(SCAFFOLDING_LABELS).toEqual([
+      'Standard Scaffolding Base',
+      'Diagonal Ridger Brace',
+      'Scaffolding',
+      'CrossRidge Brace',
+      'Standard Scaffolding Ladder',
+      'No Base',
+    ]);
+    expect(SCAFFOLDING_CONFIDENCE_THRESHOLD).toBe(0.3);
+
+    const values = new Float32Array(channels);
+    values[0] = 0.5;
+    values[1] = 0.5;
+    values[2] = 0.2;
+    values[3] = 0.4;
+    values[4 + SCAFFOLDING_LABELS.indexOf('No Base')] = 0.3;
+
+    const result = parseYoloOutput(values, [1, channels, 1], 100, 100, null, {
+      labels: SCAFFOLDING_LABELS,
+      inputSize: SCAFFOLDING_INPUT_SIZE,
+      confidenceThreshold: SCAFFOLDING_CONFIDENCE_THRESHOLD,
+    });
+
+    expect(result).toHaveLength(1);
+    expect(result[0].label).toBe('No Base');
+    expect(result[0].score).toBeCloseTo(0.3);
+  });
+
+  it('rejects scaffold detections below the 30% confidence threshold', () => {
+    const values = new Float32Array(channels);
+    values[0] = 0.5;
+    values[1] = 0.5;
+    values[2] = 0.2;
+    values[3] = 0.4;
+    values[4 + SCAFFOLDING_LABELS.indexOf('No Base')] = 0.29;
+
+    expect(parseYoloOutput(values, [1, channels, 1], 100, 100, null, {
+      labels: SCAFFOLDING_LABELS,
+      inputSize: SCAFFOLDING_INPUT_SIZE,
+      confidenceThreshold: SCAFFOLDING_CONFIDENCE_THRESHOLD,
+    })).toHaveLength(0);
   });
 });
 

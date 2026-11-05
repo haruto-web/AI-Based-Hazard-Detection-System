@@ -7,7 +7,13 @@ export default function DetectionViewer({ detection, isConnected }) {
   const {
     canvasRef,
     loading,
+    scaffoldingLoading,
+    protrudingLoading,
+    materialLoading,
     error,
+    scaffoldingError,
+    protrudingError,
+    materialError,
     status,
     detections,
     detecting,
@@ -19,7 +25,13 @@ export default function DetectionViewer({ detection, isConnected }) {
     <DetectionViewerContent
       canvasRef={canvasRef}
       loading={loading}
+      scaffoldingLoading={scaffoldingLoading}
+      protrudingLoading={protrudingLoading}
+      materialLoading={materialLoading}
       error={error}
+      scaffoldingError={scaffoldingError}
+      protrudingError={protrudingError}
+      materialError={materialError}
       status={status}
       detections={detections}
       detecting={detecting}

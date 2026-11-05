@@ -1,9 +1,20 @@
 import '../styles/DetectionViewer.css';
+import {
+  MATERIAL_LABELS,
+  PROTRUDING_LABELS,
+  SCAFFOLDING_LABELS,
+} from '../AI/LM_detection/ppeDetection';
 
 export default function DetectionViewerContent({
   canvasRef,
   loading,
+  scaffoldingLoading,
+  protrudingLoading,
+  materialLoading,
   error,
+  scaffoldingError,
+  protrudingError,
+  materialError,
   status,
   detections,
   detecting,
@@ -30,6 +41,45 @@ export default function DetectionViewerContent({
             Retry AI
           </button>
         </div>
+      )}
+      {scaffoldingError && (
+        <div className="detection-error-block">
+          <p className="detection-error">Scaffolding model failed to load: {scaffoldingError}</p>
+          <button className="detection-error-retry" onClick={handleRetry}>
+            Retry scaffolding model
+          </button>
+        </div>
+      )}
+      {scaffoldingLoading && (
+        <p className="detection-status" role="status">
+          Loading scaffolding detection model. This may take a while.
+        </p>
+      )}
+      {protrudingError && (
+        <div className="detection-error-block">
+          <p className="detection-error">Protruding hazard model failed to load: {protrudingError}</p>
+          <button className="detection-error-retry" onClick={handleRetry}>
+            Retry protruding hazard model
+          </button>
+        </div>
+      )}
+      {protrudingLoading && (
+        <p className="detection-status" role="status">
+          Loading protruding hazard detection model. This may take a while.
+        </p>
+      )}
+      {materialError && (
+        <div className="detection-error-block">
+          <p className="detection-error">Material-handling model failed to load: {materialError}</p>
+          <button className="detection-error-retry" onClick={handleRetry}>
+            Retry material-handling model
+          </button>
+        </div>
+      )}
+      {materialLoading && (
+        <p className="detection-status" role="status">
+          Loading material-handling detection model. This may take a while.
+        </p>
       )}
 
       {detecting && (
@@ -68,6 +118,54 @@ export default function DetectionViewerContent({
                 <strong className="summary-value">{detections.shoes}</strong>
               </div>
             </div>
+
+            <section className="scaffolding-detections" aria-label="Scaffolding detections">
+              <h4>Scaffolding Detection</h4>
+              <div className="scaffolding-summary-grid">
+                {SCAFFOLDING_LABELS.map((label) => (
+                  <div className={`summary-card ${label === 'No Base' ? 'scaffolding-hazard' : ''}`} key={label}>
+                    <span className="summary-label">{label}</span>
+                    <strong className="summary-value">
+                      {detections.scaffoldingClasses?.[label] || 0}
+                    </strong>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section className="scaffolding-detections" aria-label="Protruding hazard detections">
+              <h4>Protruding Hazard Detection</h4>
+              <div className="scaffolding-summary-grid">
+                {PROTRUDING_LABELS.map((label) => (
+                  <div
+                    className={`summary-card ${label === 'Potruding Hazard' ? 'scaffolding-hazard' : ''}`}
+                    key={label}
+                  >
+                    <span className="summary-label">{label}</span>
+                    <strong className="summary-value">
+                      {detections.protrudingClasses?.[label] || 0}
+                    </strong>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section className="scaffolding-detections" aria-label="Material-handling detections">
+              <h4>Material Handling</h4>
+              <div className="scaffolding-summary-grid">
+                {MATERIAL_LABELS.map((label) => (
+                  <div
+                    className={`summary-card ${label === 'Messy' ? 'scaffolding-hazard' : ''}`}
+                    key={label}
+                  >
+                    <span className="summary-label">{label}</span>
+                    <strong className="summary-value">
+                      {detections.materialClasses?.[label] || 0}
+                    </strong>
+                  </div>
+                ))}
+              </div>
+            </section>
 
             <div className="detection-risk-grid">
               <div className="risk-box">

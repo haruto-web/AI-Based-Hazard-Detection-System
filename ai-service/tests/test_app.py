@@ -5,7 +5,12 @@ from unittest.mock import patch
 from PIL import Image
 
 import app
-from app import _prepare_ppe_image, _summarize_results
+from app import (
+    _decode_yolo_output,
+    _prepare_ppe_image,
+    _summarize_hazard_results,
+    _summarize_results,
+)
 
 
 def detection(class_id, coordinates, confidence=0.9):
@@ -147,16 +152,111 @@ class SummarizeResultsTests(unittest.TestCase):
         )
 
 
+class DecodeYoloOutputTests(unittest.TestCase):
+    def test_decodes_letterboxed_boxes_and_suppresses_overlaps_per_class(self):
+        output = app.np.zeros((6, 3), dtype=app.np.float32)
+        output[:4, :] = app.np.asarray([
+            [0.5, 0.51, 0.5],
+            [0.5, 0.5, 0.5],
+            [0.25, 0.25, 0.25],
+            [0.25, 0.25, 0.25],
+        ])
+        output[4:, :] = app.np.asarray([
+            [0.8, 0.7, 0.1],
+            [0.1, 0.1, 0.9],
+        ])
+
+        boxes = _decode_yolo_output(
+            output,
+            image_size=(320, 320),
+            scale=2,
+            pad_x=0,
+            pad_y=0,
+            input_width=640,
+            input_height=640,
+            confidence_threshold=0.3,
+            channels_first=True,
+            candidate_count=3,
+        )
+
+        self.assertEqual([int(box.cls[0][0]) for box in boxes], [1, 0])
+        self.assertEqual(boxes[1].xyxy[0].tolist(), [120.0, 120.0, 200.0, 200.0])
+
+
+class SummarizeHazardResultsTests(unittest.TestCase):
+    def test_counts_material_classes_but_only_reports_messy(self):
+        result = SimpleNamespace(
+            boxes=[
+                detection(0, [10, 10, 30, 30], confidence=0.8),
+                detection(1, [40, 40, 70, 70], confidence=0.3),
+                detection(1, [75, 75, 90, 90], confidence=0.29),
+            ],
+            names={0: "Organized", 1: "Messy"},
+        )
+
+        counts, alerts = _summarize_hazard_results(
+            result,
+            ["Organized", "Messy"],
+            {"Messy"},
+        )
+
+        self.assertEqual(counts, {"Organized": 1, "Messy": 1})
+        self.assertEqual([alert["label"] for alert in alerts], ["Messy"])
+        self.assertEqual(alerts[0]["confidence"], 0.3)
+
+    def test_uses_the_model_class_order_when_names_are_missing(self):
+        result = SimpleNamespace(
+            boxes=[detection(1, [10, 10, 30, 30], confidence=0.6)],
+            names={},
+        )
+
+        counts, alerts = _summarize_hazard_results(
+            result,
+            ["Organized", "Messy"],
+            {"Messy"},
+        )
+
+        self.assertEqual(counts["Messy"], 1)
+        self.assertEqual([alert["label"] for alert in alerts], ["Messy"])
+
+    def test_runs_hazard_models_sequentially_and_returns_confidence(self):
+        result = SimpleNamespace(
+            boxes=[detection(1, [10, 10, 30, 30], confidence=0.8)],
+            names={0: "Organized", 1: "Messy"},
+        )
+        fake_model = lambda *_args, **_kwargs: [result]
+
+        with (
+            patch.dict(
+                app.HAZARD_MODEL_CONFIG,
+                {
+                    "material": {
+                        "path": app.Path("material.tflite"),
+                        "labels": ["Organized", "Messy"],
+                        "reportable": {"Messy"},
+                    }
+                },
+                clear=True,
+            ),
+            patch.object(app, "_load_hazard_model", return_value=fake_model),
+        ):
+            detections, alerts, errors = app._detect_hazards(Image.new("RGB", (20, 20)))
+
+        self.assertEqual(detections["materialClasses"], {"Organized": 0, "Messy": 1})
+        self.assertEqual(detections["messyMaterialAreas"], 1)
+        self.assertEqual(detections["materialConfidence"], 0.8)
+        self.assertEqual([alert["label"] for alert in alerts], ["Messy"])
+        self.assertEqual(errors, {})
+
+
 class ModelStartupTests(unittest.IsolatedAsyncioTestCase):
     async def test_tflite_runtime_failure_is_reported_without_stopping_service(self):
         class BlockedModel:
             def __call__(self, *_args, **_kwargs):
                 raise ImportError("TFLite runtime blocked")
 
-        with (
-            patch.object(app, "model", BlockedModel()),
-            patch.object(app, "MODEL_LOAD_ERROR", None),
-            patch.object(app, "person_model", None),
+        with patch.object(app, "TFLiteYoloModel", return_value=BlockedModel()), patch.object(
+            app, "MODEL_LOAD_ERROR", None
         ):
             async with app.lifespan(app.app):
                 self.assertIsNone(app.model)

@@ -133,6 +133,9 @@ export function normalizeIncident(incident) {
 
   // Recommended action: website uses "precautions", app uses "prevention".
   const precautions = incident.precautions || incident.prevention || '';
+  const hasDetectedWorkers = incident.detectedWorkers !== null &&
+    incident.detectedWorkers !== undefined &&
+    Number.isFinite(Number(incident.detectedWorkers));
 
   // App incidents don't carry per-item PPE counts; derive them from the hazard
   // type so the PPE-breakdown/compliance charts still populate. e.g. a
@@ -176,7 +179,9 @@ export function normalizeIncident(incident) {
     status,
     detectionConfidence: confidence,
     // A single app detection represents at least one worker observed.
-    detectedWorkers: Number(incident.detectedWorkers) || (incident.hazardType ? 1 : 0),
+    detectedWorkers: hasDetectedWorkers
+      ? Math.max(0, Number(incident.detectedWorkers))
+      : (incident.hazardType ? 1 : 0),
     helmets,
     noHelmets,
     vests,
