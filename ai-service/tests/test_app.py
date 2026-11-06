@@ -217,11 +217,11 @@ class SummarizeHazardResultsTests(unittest.TestCase):
         self.assertEqual([alert["label"] for alert in alerts], ["Messy"])
         self.assertEqual(alerts[0]["confidence"], 0.3)
 
-    def test_scaffolding_uses_the_20_percent_threshold_for_inference_and_counts(self):
+    def test_scaffolding_uses_the_5_percent_threshold_for_inference_and_counts(self):
         result = SimpleNamespace(
             boxes=[
-                detection(5, [10, 10, 30, 30], confidence=0.2),
-                detection(5, [40, 40, 70, 70], confidence=0.19),
+                detection(5, [10, 10, 30, 30], confidence=0.05),
+                detection(5, [40, 40, 70, 70], confidence=0.049),
             ],
             names={5: "No Base"},
         )
@@ -246,7 +246,7 @@ class SummarizeHazardResultsTests(unittest.TestCase):
                             "No Base",
                         ],
                         "reportable": {"No Base"},
-                        "confidence_threshold": 0.2,
+                        "confidence_threshold": app.SCAFFOLDING_CONFIDENCE_THRESHOLD,
                     }
                 },
                 clear=True,
@@ -258,10 +258,87 @@ class SummarizeHazardResultsTests(unittest.TestCase):
                 active_detectors=("scaffolding",),
             )
 
-        self.assertEqual(model_thresholds, [0.2])
+        self.assertEqual(model_thresholds, [0.05])
         self.assertEqual(detections["scaffoldingClasses"]["No Base"], 1)
         self.assertEqual(detections["noBase"], 1)
         self.assertEqual([alert["label"] for alert in alerts], ["No Base"])
+        self.assertEqual(errors, {})
+
+    def test_protruding_uses_the_25_percent_threshold_for_inference_and_counts(self):
+        result = SimpleNamespace(
+            boxes=[
+                detection(0, [10, 10, 30, 30], confidence=0.25),
+                detection(0, [40, 40, 70, 70], confidence=0.249),
+            ],
+            names={0: "Potruding Hazard", 1: "Safety Cap"},
+        )
+        model_thresholds = []
+
+        def fake_model(_image, conf):
+            model_thresholds.append(conf)
+            return [result]
+
+        with (
+            patch.dict(
+                app.HAZARD_MODEL_CONFIG,
+                {
+                    "protruding": {
+                        "path": app.Path("protruding.tflite"),
+                        "labels": ["Potruding Hazard", "Safety Cap"],
+                        "reportable": {"Potruding Hazard"},
+                        "confidence_threshold": app.PROTRUDING_CONFIDENCE_THRESHOLD,
+                    }
+                },
+                clear=True,
+            ),
+            patch.object(app, "_load_hazard_model", return_value=fake_model),
+        ):
+            detections, alerts, errors = app._detect_hazards(
+                Image.new("RGB", (20, 20)),
+                active_detectors=("protruding",),
+            )
+
+        self.assertEqual(model_thresholds, [0.25])
+        self.assertEqual(detections["protrudingClasses"]["Potruding Hazard"], 1)
+        self.assertEqual(detections["protrudingHazardCount"], 1)
+        self.assertEqual([alert["label"] for alert in alerts], ["Potruding Hazard"])
+        self.assertEqual(errors, {})
+
+    def test_material_uses_the_configured_threshold_for_inference_and_counts(self):
+        result = SimpleNamespace(
+            boxes=[detection(1, [10, 10, 30, 30], confidence=0.26)],
+            names={0: "Organized", 1: "Messy"},
+        )
+        model_thresholds = []
+
+        def fake_model(_image, conf):
+            model_thresholds.append(conf)
+            return [result]
+
+        with (
+            patch.dict(
+                app.HAZARD_MODEL_CONFIG,
+                {
+                    "material": {
+                        "path": app.Path("material.tflite"),
+                        "labels": ["Organized", "Messy"],
+                        "reportable": {"Messy"},
+                        "confidence_threshold": app.MATERIAL_CONFIDENCE_THRESHOLD,
+                    }
+                },
+                clear=True,
+            ),
+            patch.object(app, "_load_hazard_model", return_value=fake_model),
+        ):
+            detections, alerts, errors = app._detect_hazards(
+                Image.new("RGB", (20, 20)),
+                active_detectors=("material",),
+            )
+
+        self.assertEqual(model_thresholds, [0.25])
+        self.assertEqual(detections["materialClasses"]["Messy"], 1)
+        self.assertEqual(detections["messyMaterialAreas"], 1)
+        self.assertEqual([alert["label"] for alert in alerts], ["Messy"])
         self.assertEqual(errors, {})
 
     def test_uses_the_model_class_order_when_names_are_missing(self):

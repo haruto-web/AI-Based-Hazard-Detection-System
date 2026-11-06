@@ -29,7 +29,9 @@ PPE_LABELS = [
     "No Safety Shoes",
 ]
 YOLO_IOU_THRESHOLD = 0.70
-SCAFFOLDING_CONFIDENCE_THRESHOLD = 0.20
+SCAFFOLDING_CONFIDENCE_THRESHOLD = 0.05
+PROTRUDING_CONFIDENCE_THRESHOLD = 0.25
+MATERIAL_CONFIDENCE_THRESHOLD = 0.25
 HAZARD_MODEL_CONFIG = {
     "scaffolding": {
         "path": Path(os.environ.get("AI_SCAFFOLDING_MODEL_PATH") or ROOT_DIR / "hazora-dashboard" / "public" / "models" / "scaffolding" / "scaffolding1.tflite"),
@@ -48,11 +50,13 @@ HAZARD_MODEL_CONFIG = {
         "path": Path(os.environ.get("AI_PROTRUDING_MODEL_PATH") or ROOT_DIR / "hazora-dashboard" / "public" / "models" / "protruding" / "protruding.tflite"),
         "labels": ["Potruding Hazard", "Safety Cap"],
         "reportable": {"Potruding Hazard"},
+        "confidence_threshold": PROTRUDING_CONFIDENCE_THRESHOLD,
     },
     "material": {
         "path": Path(os.environ.get("AI_MATERIAL_MODEL_PATH") or ROOT_DIR / "hazora-dashboard" / "public" / "models" / "material" / "material.tflite"),
         "labels": ["Organized", "Messy"],
         "reportable": {"Messy"},
+        "confidence_threshold": MATERIAL_CONFIDENCE_THRESHOLD,
     },
 }
 DETECTOR_NAMES = ("ppe", *HAZARD_MODEL_CONFIG.keys())
