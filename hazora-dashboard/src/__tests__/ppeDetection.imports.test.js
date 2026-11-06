@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import * as tf from '@tensorflow/tfjs';
 import * as cocoSsd from '@tensorflow-models/coco-ssd';
 import {
+  buildCaptureUrls,
+  buildStreamUrls,
   getAutoBrightnessScale,
   parseYoloOutput,
   groupPpeDetections,
@@ -21,6 +23,26 @@ import {
   SCAFFOLDING_LABELS,
   stabilizePpeDetections,
 } from '../AI/LM_detection/ppeDetection';
+
+describe('camera capture endpoint compatibility', () => {
+  it('tries the standard ESP32 endpoint and the mobile camera stream-port endpoint', () => {
+    expect(buildCaptureUrls('192.168.55.105')).toEqual([
+      'http://192.168.55.105/capture',
+      'http://192.168.55.105:8080/capture',
+    ]);
+  });
+
+  it('returns no capture URLs for an empty camera address', () => {
+    expect(buildCaptureUrls('')).toEqual([]);
+  });
+
+  it('tries the mobile app stream port and the ESP32 stream port', () => {
+    expect(buildStreamUrls('192.168.55.105')).toEqual([
+      'http://192.168.55.105:8081/stream',
+      'http://192.168.55.105:81/stream',
+    ]);
+  });
+});
 
 describe('TensorFlow model packages', () => {
   it('loads the installed browser ML dependencies', () => {

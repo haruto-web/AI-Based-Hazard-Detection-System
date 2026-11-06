@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { validateIPv4 } from './CameraConfig';
+import { buildStreamUrls } from '../AI/LM_detection/ppeDetection';
 import '../styles/StreamBox.css';
 
 export default function StreamBox({ id, label, cameraIP, onIPChange, isMain = false, onPromote }) {
   const [status, setStatus] = useState('idle'); // 'idle' | 'loading' | 'connected' | 'failed'
   const [inputValue, setInputValue] = useState('');
   const [error, setError] = useState(null);
+  const [streamUrlIndex, setStreamUrlIndex] = useState(0);
   const timeoutRef = useRef(null);
   const imgRef = useRef(null);
 
@@ -18,6 +20,7 @@ export default function StreamBox({ id, label, cameraIP, onIPChange, isMain = fa
 
   // Handle connection when cameraIP changes
   useEffect(() => {
+    setStreamUrlIndex(0);
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
       timeoutRef.current = null;
@@ -52,6 +55,10 @@ export default function StreamBox({ id, label, cameraIP, onIPChange, isMain = fa
   }
 
   function handleError() {
+    if (streamUrlIndex < streamUrls.length - 1) {
+      setStreamUrlIndex((index) => index + 1);
+      return;
+    }
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
       timeoutRef.current = null;
@@ -69,24 +76,6 @@ export default function StreamBox({ id, label, cameraIP, onIPChange, isMain = fa
       return validateIPv4(url.hostname) ? url.hostname : '';
     } catch {
       return '';
-    }
-  }
-
-  function getStreamUrl(value) {
-    if (!value) return '';
-
-    if (!isUrl(value)) {
-      return `http://${value}:81/stream`;
-    }
-
-    try {
-      const url = new URL(value);
-      if (url.pathname === '/' || url.pathname === '') {
-        return `${url.protocol}//${url.hostname}:81/stream`;
-      }
-      return value;
-    } catch {
-      return value;
     }
   }
 
@@ -119,7 +108,8 @@ export default function StreamBox({ id, label, cameraIP, onIPChange, isMain = fa
     setStatus('idle');
   }
 
-  const streamUrl = getStreamUrl(cameraIP);
+  const streamUrls = buildStreamUrls(cameraIP);
+  const streamUrl = streamUrls[streamUrlIndex] || '';
 
   return (
     <div className={`stream-box ${status}${isMain ? ' main' : ''}`}>
@@ -168,7 +158,14 @@ export default function StreamBox({ id, label, cameraIP, onIPChange, isMain = fa
             </div>
             <p>Connection failed</p>
             <div className="stream-box-failed-actions">
-              <button className="retry-btn" onClick={() => onIPChange(id, cameraIP)}>
+              <button
+                className="retry-btn"
+                onClick={() => {
+                  setStreamUrlIndex(0);
+                  setStatus('loading');
+                  timeoutRef.current = setTimeout(() => setStatus('failed'), 10000);
+                }}
+              >
                 Retry
               </button>
               <button className="stream-box-disconnect-btn" onClick={handleDisconnect}>

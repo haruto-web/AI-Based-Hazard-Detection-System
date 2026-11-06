@@ -34,45 +34,45 @@ export const PPE_HAZARD_INFO = {
 };
 
 export function buildScaffoldingHazardReport({ affectedCount, cameraSource }) {
-  const scaffoldSections = `${affectedCount} scaffolding section${affectedCount === 1 ? '' : 's'}`;
-  const location = cameraSource ? ` on camera ${cameraSource}` : '';
+  const scaffoldSections = `${affectedCount} scaffold section${affectedCount === 1 ? '' : 's'}`;
+  const location = cameraSource ? ` Camera: ${cameraSource}.` : '';
   const hazardType = 'Scaffolding Missing Base';
   const action = 'Stop use of the affected scaffold and have a competent person install and verify a proper base before work resumes.';
 
   return {
     hazardType,
-    description: `${scaffoldSections}${location} detected without a required base. An unstable scaffold can shift or collapse and cause serious injury.`,
+    description: `AI identified ${scaffoldSections} without a required base.${location} Missing base support can make the scaffold unstable and increase the risk of shifting or collapse.`,
     precautions: `${action} Inspect the scaffold foundation and all supporting components before allowing access.`,
     severity: 'high',
-    notificationMessage: `${scaffoldSections} detected without a base${location}. ${action}`,
+    notificationMessage: `${scaffoldSections} detected without a required base${cameraSource ? ` on camera ${cameraSource}` : ''}. ${action}`,
   };
 }
 
 export function buildProtrudingHazardReport({ affectedCount, cameraSource }) {
-  const hazards = `${affectedCount} protruding hazard${affectedCount === 1 ? '' : 's'}`;
-  const location = cameraSource ? ` on camera ${cameraSource}` : '';
+  const hazards = `${affectedCount} unprotected protruding object${affectedCount === 1 ? '' : 's'}`;
+  const location = cameraSource ? ` Camera: ${cameraSource}.` : '';
   const action = 'Secure, remove, or clearly guard the protruding object and keep workers away until the area is safe.';
 
   return {
     hazardType: 'Protruding Object',
-    description: `${hazards}${location} detected in the work area. Unprotected protrusions can cause trip, puncture, or impact injuries.`,
+    description: `AI identified ${hazards} in the work area.${location} Exposed objects may cause puncture, trip, or impact injuries.`,
     precautions: `${action} Inspect the area and install suitable protective caps or barriers where removal is not possible.`,
     severity: 'high',
-    notificationMessage: `${hazards} detected${location}. ${action}`,
+    notificationMessage: `${hazards} detected${cameraSource ? ` on camera ${cameraSource}` : ''}. ${action}`,
   };
 }
 
 export function buildMaterialHandlingHazardReport({ affectedCount, cameraSource }) {
   const areas = `${affectedCount} material-handling area${affectedCount === 1 ? '' : 's'}`;
-  const location = cameraSource ? ` on camera ${cameraSource}` : '';
+  const location = cameraSource ? ` Camera: ${cameraSource}.` : '';
   const action = 'Pause work in the affected area and organize, secure, and safely stack the materials before handling continues.';
 
   return {
     hazardType: 'Disorganized Material Handling',
-    description: `${areas}${location} detected with messy material storage. Disorganized or unsecured materials can obstruct walkways, fall, or create trip and impact hazards.`,
+    description: `AI identified ${areas} with disorganized material storage.${location} Unsecured or poorly stacked items may block walkways, fall, or cause trip and impact injuries.`,
     precautions: `${action} Keep access paths clear and verify that stored materials are stable.`,
     severity: 'high',
-    notificationMessage: `${areas} detected with messy material storage${location}. ${action}`,
+    notificationMessage: `${areas} detected with disorganized material storage${cameraSource ? ` on camera ${cameraSource}` : ''}. ${action}`,
   };
 }
 
@@ -93,15 +93,15 @@ export function buildHazardReport({ item, affectedCount, personCount, compliantC
   };
 
   const workers = pluralizeWorkers(affectedCount);
-  const location = cameraSource ? ` on camera ${cameraSource}` : '';
+  const location = cameraSource ? ` Camera: ${cameraSource}.` : '';
   const complianceNote = personCount
-    ? ` Out of ${pluralizeWorkers(personCount)} detected${location}, ${affectedCount} ${affectedCount === 1 ? 'is' : 'are'} non-compliant and ${compliantCount} fully compliant.`
+    ? ` Of the ${pluralizeWorkers(personCount)} identified, ${affectedCount} ${affectedCount === 1 ? 'is' : 'are'} non-compliant and ${compliantCount} ${compliantCount === 1 ? 'is' : 'are'} fully compliant.`
     : '';
 
   const hazardType = `Missing ${info.gear.replace(/^./, (c) => c.toUpperCase())}`;
 
   const description =
-    `${workers}${location} detected without a ${info.gear}. ` +
+    `AI identified ${workers} without the required ${info.gear}.${location} ` +
     `${info.risk}${complianceNote}`;
 
   const precautions =

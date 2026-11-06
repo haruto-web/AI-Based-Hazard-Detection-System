@@ -140,6 +140,15 @@ export default function Dashboard() {
                       <li>Enter the IP in any stream box and click the arrow to connect</li>
                     </ol>
                     <div className="saved-camera-sites">
+                      <p className="saved-camera-sites-title">Hazora Mobile Camera app</p>
+                      <ol>
+                        <li>Connect the phone running Hazora Mobile Camera and this dashboard device to the same Wi-Fi network.</li>
+                        <li>Open the app, allow camera access, and tap <strong>Start camera</strong>.</li>
+                        <li>Copy the IP address shown in the app, then enter that IP (not the full stream URL) in a stream box and connect.</li>
+                        <li>Keep the camera app open while streaming. The dashboard will use the phone camera for the live stream and AI snapshots.</li>
+                      </ol>
+                    </div>
+                    <div className="saved-camera-sites">
                       <p className="saved-camera-sites-title">Saved camera website</p>
                       {savedCameraLinks.length > 0 ? (
                         savedCameraLinks.map(({ website, index }) => (

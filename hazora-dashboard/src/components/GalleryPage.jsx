@@ -667,7 +667,9 @@ export default function GalleryPage({ userRole, cameraIP = '', siteLocation = ''
               </div>
               <div className="gallery-modal-row">
                 <span className="gallery-modal-label">Severity</span>
-                <span className={`gallery-card-severity ${selected.severity}`}>{selected.severity}</span>
+                <span className={`gallery-card-severity gallery-modal-severity ${selected.severity}`}>
+                  {selected.severity}
+                </span>
               </div>
               <div className="gallery-modal-row">
                 <span className="gallery-modal-label">Mobile validation</span>
@@ -691,10 +693,6 @@ export default function GalleryPage({ userRole, cameraIP = '', siteLocation = ''
                   <span>{selected.classifiedBy}</span>
                 </div>
               )}
-              <div className="gallery-modal-row">
-                <span className="gallery-modal-label">Confidence</span>
-                <span>{selected.detectionConfidence ? `${Math.round(selected.detectionConfidence * 100)}%` : 'N/A'}</span>
-              </div>
               <div className="gallery-modal-description">
                 <span className="gallery-modal-label">AI description</span>
                 <p>{selected.description}</p>

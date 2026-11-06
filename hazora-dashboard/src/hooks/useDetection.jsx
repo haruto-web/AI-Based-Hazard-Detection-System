@@ -5,6 +5,8 @@ import { useAuth } from '../context/AuthContext';
 import { canManageSites } from '../config/roles';
 import {
   buildCaptureUrl,
+  buildCaptureUrls,
+  buildStreamUrls,
   createPersonTracker,
   cropFaceForPerson,
   detectFaces,
@@ -41,30 +43,32 @@ const AVAILABLE_DETECTORS = ['ppe', 'scaffolding', 'protruding', 'material'];
 const DETECTOR_MODE_STORAGE_PREFIX = 'hazora_detection_mode_';
 
 export function buildStreamUrl(value) {
-  if (!value) return '';
-  if (value.startsWith('http://') || value.startsWith('https://')) {
-    try {
-      const url = new URL(value);
-      return `${url.protocol}//${url.hostname}:81/stream`;
-    } catch {
-      return value;
-    }
-  }
-  return `http://${value}:81/stream`;
+  return buildStreamUrls(value)[0] || '';
 }
 
 // Load a fresh JPEG from the ESP32 /capture endpoint. The MJPEG stream never
 // fires `load`, so we cannot read pixels from it reliably; a single-frame grab
 // decodes cleanly and the ESP32 already serves it with CORS headers.
 function loadCaptureFrame(captureUrl) {
-  return new Promise((resolve, reject) => {
-    const image = new Image();
-    image.crossOrigin = 'anonymous';
-    image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error('Failed to load camera frame'));
-    // Cache-bust so each poll pulls a new frame.
-    image.src = `${captureUrl}?t=${Date.now()}`;
-  });
+  const captureUrls = buildCaptureUrls(captureUrl);
+  return (async () => {
+    let lastError = null;
+    for (const url of captureUrls) {
+      try {
+        return await new Promise((resolve, reject) => {
+          const image = new Image();
+          image.crossOrigin = 'anonymous';
+          image.onload = () => resolve(image);
+          image.onerror = () => reject(new Error(`Failed to load camera frame from ${url}`));
+          // Cache-bust so each poll pulls a new frame.
+          image.src = `${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`;
+        });
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError || new Error('No camera capture endpoint is available');
+  })();
 }
 
 async function captureFullFrameImage(captureUrl) {

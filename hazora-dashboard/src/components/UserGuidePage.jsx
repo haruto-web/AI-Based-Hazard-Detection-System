@@ -34,7 +34,8 @@ export default function UserGuidePage() {
         <GuideSection title="Using the website">
           <ol>
             <li><strong>Dashboard:</strong> review the available safety and hazard summaries.</li>
-            <li><strong>Live Streams:</strong> connect a camera using its IP address, then use the AI Detection controls to start or stop analysis.</li>
+            <li><strong>Live Streams:</strong> connect the camera and dashboard device to the same Wi-Fi network. For the Hazora Mobile Camera app, open the app, grant camera permission, tap <strong>Start camera</strong>, then enter the displayed IP address in a stream box. Keep the app open while streaming. ESP32-CAM devices can be set up using the Camera Setup Guide.</li>
+            <li>Use the AI Detection controls to start or stop analysis after the camera stream connects.</li>
             <li><strong>Incident Captures:</strong> review saved evidence or, with full gallery access, use <em>Add capture</em> to upload a historical image, enter its capture time and camera IP, choose a detection category, and record its counts.</li>
             <li><strong>Reports:</strong> view or export reports when your role allows it.</li>
             <li><strong>Messages:</strong> read notices or send messages where your role allows it.</li>

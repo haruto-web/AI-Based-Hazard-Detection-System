@@ -70,6 +70,34 @@ export function buildCaptureUrl(value) {
   }
 }
 
+export function buildCaptureUrls(value) {
+  const captureUrl = buildCaptureUrl(value);
+  if (!captureUrl) return [];
+
+  const url = new URL(captureUrl);
+  const mobileCaptureUrl = `${url.protocol}//${url.hostname}:8080/capture`;
+  return [...new Set([captureUrl, mobileCaptureUrl])];
+}
+
+export function buildStreamUrls(value) {
+  if (!value) return [];
+
+  if (!value.startsWith('http://') && !value.startsWith('https://')) {
+    return [`http://${value}:8081/stream`, `http://${value}:81/stream`];
+  }
+
+  try {
+    const url = new URL(value);
+    if (url.pathname !== '/' && url.pathname !== '') return [value];
+    return [
+      `${url.protocol}//${url.hostname}:8081/stream`,
+      `${url.protocol}//${url.hostname}:81/stream`,
+    ];
+  } catch {
+    return [];
+  }
+}
+
 export function getAutoBrightnessScale(ctx, width, height) {
   const imageData = ctx.getImageData(0, 0, width, height);
   const data = imageData.data;

@@ -243,8 +243,16 @@
 
 .gallery-card-severity.low { background: #41915a; }
 .gallery-card-severity.medium { background: #d0a028; }
-.gallery-card-severity.high { background: #dc6928; }
+.gallery-card-severity.high,
 .gallery-card-severity.critical { background: #be2d2d; }
+
+.gallery-modal-severity {
+  position: static;
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
 
 .gallery-card-body {
   padding: 12px 14px 16px;
@@ -471,7 +479,7 @@
 .gallery-severity-btn.all.active { background: #334155; }
 .gallery-severity-btn.low.active { background: #41915a; }
 .gallery-severity-btn.medium.active { background: #d0a028; }
-.gallery-severity-btn.high.active { background: #dc6928; }
+.gallery-severity-btn.high.active { background: #be2d2d; }
 .gallery-severity-btn.critical.active { background: #be2d2d; }
 
 /* Delete control on the card */
