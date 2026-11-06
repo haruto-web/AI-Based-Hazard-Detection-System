@@ -217,11 +217,11 @@ class SummarizeHazardResultsTests(unittest.TestCase):
         self.assertEqual([alert["label"] for alert in alerts], ["Messy"])
         self.assertEqual(alerts[0]["confidence"], 0.3)
 
-    def test_scaffolding_uses_the_5_percent_threshold_for_inference_and_counts(self):
+    def test_scaffolding_uses_the_25_percent_threshold_for_inference_and_counts(self):
         result = SimpleNamespace(
             boxes=[
-                detection(5, [10, 10, 30, 30], confidence=0.05),
-                detection(5, [40, 40, 70, 70], confidence=0.049),
+                detection(5, [10, 10, 30, 30], confidence=0.25),
+                detection(5, [40, 40, 70, 70], confidence=0.249),
             ],
             names={5: "No Base"},
         )
@@ -258,7 +258,7 @@ class SummarizeHazardResultsTests(unittest.TestCase):
                 active_detectors=("scaffolding",),
             )
 
-        self.assertEqual(model_thresholds, [0.05])
+        self.assertEqual(model_thresholds, [0.25])
         self.assertEqual(detections["scaffoldingClasses"]["No Base"], 1)
         self.assertEqual(detections["noBase"], 1)
         self.assertEqual([alert["label"] for alert in alerts], ["No Base"])

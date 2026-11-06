@@ -319,7 +319,7 @@ describe('material-handling YOLOv8 output parsing', () => {
 describe('scaffolding YOLOv8 output parsing', () => {
   const channels = 4 + SCAFFOLDING_LABELS.length;
 
-  it('uses the scaffold model classes and a 5% confidence threshold', () => {
+  it('uses the scaffold model classes and a 25% confidence threshold', () => {
     expect(SCAFFOLDING_LABELS).toEqual([
       'Standard Scaffolding Base',
       'Diagonal Ridger Brace',
@@ -328,14 +328,14 @@ describe('scaffolding YOLOv8 output parsing', () => {
       'Standard Scaffolding Ladder',
       'No Base',
     ]);
-    expect(SCAFFOLDING_CONFIDENCE_THRESHOLD).toBe(0.05);
+    expect(SCAFFOLDING_CONFIDENCE_THRESHOLD).toBe(0.25);
 
     const values = new Float32Array(channels);
     values[0] = 0.5;
     values[1] = 0.5;
     values[2] = 0.2;
     values[3] = 0.4;
-    values[4 + SCAFFOLDING_LABELS.indexOf('No Base')] = 0.05;
+    values[4 + SCAFFOLDING_LABELS.indexOf('No Base')] = 0.25;
 
     const result = parseYoloOutput(values, [1, channels, 1], 100, 100, null, {
       labels: SCAFFOLDING_LABELS,
@@ -345,16 +345,16 @@ describe('scaffolding YOLOv8 output parsing', () => {
 
     expect(result).toHaveLength(1);
     expect(result[0].label).toBe('No Base');
-    expect(result[0].score).toBeCloseTo(0.05);
+    expect(result[0].score).toBeCloseTo(0.25);
   });
 
-  it('rejects scaffold detections below the 5% confidence threshold', () => {
+  it('rejects scaffold detections below the 25% confidence threshold', () => {
     const values = new Float32Array(channels);
     values[0] = 0.5;
     values[1] = 0.5;
     values[2] = 0.2;
     values[3] = 0.4;
-    values[4 + SCAFFOLDING_LABELS.indexOf('No Base')] = 0.049;
+    values[4 + SCAFFOLDING_LABELS.indexOf('No Base')] = 0.249;
 
     expect(parseYoloOutput(values, [1, channels, 1], 100, 100, null, {
       labels: SCAFFOLDING_LABELS,
