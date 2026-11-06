@@ -31,6 +31,19 @@ export default function DetectionViewerContent({
     ['protruding', 'Protruding hazard'],
     ['material', 'Material handling'],
   ];
+  const ppeEnabled = activeDetectors.includes('ppe');
+  const ppeStatus = (missingCount, itemCount) => {
+    if (!ppeEnabled) return { state: 'Not checked', tone: 'caution' };
+    if (missingCount > 0) return { state: `Missing (${missingCount})`, tone: 'danger' };
+    if (detections.persons === 0) return { state: 'No workers detected', tone: 'caution' };
+    if (itemCount > 0) return { state: 'Detected', tone: 'good' };
+    return { state: 'Check camera', tone: 'caution' };
+  };
+  const ppeItems = [
+    ['Helmet', detections.noHelmets, detections.helmets],
+    ['Vest', detections.noVests, detections.vests],
+    ['Shoes', detections.noShoes, detections.shoes],
+  ];
 
   return (
     <div className="detection-viewer">
@@ -130,18 +143,15 @@ export default function DetectionViewerContent({
         <>
           <div className="detection-panel">
             <div className="ppe-status-bar" aria-live="polite">
-              <div className={`ppe-pill ${detections.helmets > 0 ? 'good' : 'warn'}`}>
-                <span className="ppe-pill-title">Helmet</span>
-                <span className="ppe-pill-state">{detections.helmets > 0 ? 'Detected' : 'Missing'}</span>
-              </div>
-              <div className={`ppe-pill ${detections.vests > 0 ? 'good' : 'warn'}`}>
-                <span className="ppe-pill-title">Vest</span>
-                <span className="ppe-pill-state">{detections.vests > 0 ? 'Detected' : 'Missing'}</span>
-              </div>
-              <div className={`ppe-pill ${detections.shoes > 0 ? 'good' : 'warn'}`}>
-                <span className="ppe-pill-title">Shoes</span>
-                <span className="ppe-pill-state">{detections.shoes > 0 ? 'Detected' : 'Missing'}</span>
-              </div>
+              {ppeItems.map(([label, missing, detected]) => {
+                const result = ppeStatus(missing, detected);
+                return (
+                  <div className={`ppe-pill ${result.tone}`} key={label}>
+                    <span className="ppe-pill-title">{label}</span>
+                    <span className="ppe-pill-state">{result.state}</span>
+                  </div>
+                );
+              })}
             </div>
 
             <div className="detection-summary-grid">
@@ -167,7 +177,14 @@ export default function DetectionViewerContent({
               <h4>Scaffolding Detection</h4>
               <div className="scaffolding-summary-grid">
                 {SCAFFOLDING_LABELS.map((label) => (
-                  <div className={`summary-card ${label === 'No Base' ? 'scaffolding-hazard' : ''}`} key={label}>
+                  <div
+                    className={`summary-card ${
+                      (detections.scaffoldingClasses?.[label] || 0) > 0
+                        ? label === 'No Base' ? 'scaffolding-hazard' : 'detection-safe'
+                        : ''
+                    }`}
+                    key={label}
+                  >
                     <span className="summary-label">{label}</span>
                     <strong className="summary-value">
                       {detections.scaffoldingClasses?.[label] || 0}
@@ -182,7 +199,11 @@ export default function DetectionViewerContent({
               <div className="scaffolding-summary-grid">
                 {PROTRUDING_LABELS.map((label) => (
                   <div
-                    className={`summary-card ${label === 'Potruding Hazard' ? 'scaffolding-hazard' : ''}`}
+                    className={`summary-card ${
+                      (detections.protrudingClasses?.[label] || 0) > 0
+                        ? label === 'Potruding Hazard' ? 'scaffolding-hazard' : 'detection-safe'
+                        : ''
+                    }`}
                     key={label}
                   >
                     <span className="summary-label">{label}</span>
@@ -199,7 +220,11 @@ export default function DetectionViewerContent({
               <div className="scaffolding-summary-grid">
                 {MATERIAL_LABELS.map((label) => (
                   <div
-                    className={`summary-card ${label === 'Messy' ? 'scaffolding-hazard' : ''}`}
+                    className={`summary-card ${
+                      (detections.materialClasses?.[label] || 0) > 0
+                        ? label === 'Messy' ? 'scaffolding-hazard' : 'detection-safe'
+                        : ''
+                    }`}
                     key={label}
                   >
                     <span className="summary-label">{label}</span>
@@ -212,11 +237,11 @@ export default function DetectionViewerContent({
             </section>
 
             <div className="detection-risk-grid">
-              <div className="risk-box">
+              <div className={`risk-box ${detections.compliant > 0 ? 'compliant-box' : ''}`}>
                 <span className="risk-label">Compliant</span>
                 <strong>{detections.compliant}</strong>
               </div>
-              <div className="risk-box hazard-box">
+              <div className={`risk-box ${detections.violations > 0 ? 'hazard-box' : ''}`}>
                 <span className="risk-label">Violations</span>
                 <strong>{detections.violations}</strong>
               </div>

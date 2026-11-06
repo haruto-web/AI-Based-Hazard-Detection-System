@@ -1,7 +1,8 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { collection, addDoc, updateDoc, doc, query, where, orderBy, limit, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from './AuthContext';
+import HazardAlertToasts from '../components/HazardAlertToasts';
 
 const NotificationContext = createContext(null);
 
@@ -10,7 +11,23 @@ const MAX_NOTIFICATIONS = 50;
 export function NotificationProvider({ children }) {
   const [notifications, setNotifications] = useState([]);
   const [messageNotifications, setMessageNotifications] = useState([]);
+  const [popupNotifications, setPopupNotifications] = useState([]);
+  const popupIdRef = useRef(0);
   const { user } = useAuth();
+
+  const dismissPopup = useCallback((id) => {
+    setPopupNotifications((previous) => previous.filter((notification) => notification.id !== id));
+  }, []);
+
+  useEffect(() => {
+    if (popupNotifications.length === 0) return undefined;
+
+    const timers = popupNotifications.map((notification) => setTimeout(
+      () => dismissPopup(notification.id),
+      8000,
+    ));
+    return () => timers.forEach(clearTimeout);
+  }, [popupNotifications, dismissPopup]);
 
   // Real-time listener for notifications (per-user)
   useEffect(() => {
@@ -91,6 +108,13 @@ export function NotificationProvider({ children }) {
 
   const addNotification = useCallback(async (notification) => {
     if (!user) return;
+    const popupId = `hazard-${Date.now()}-${popupIdRef.current + 1}`;
+    popupIdRef.current += 1;
+    setPopupNotifications((previous) => [
+      { ...notification, id: popupId },
+      ...previous,
+    ].slice(0, 3));
+
     try {
       await addDoc(collection(db, 'users', user.uid, 'notifications'), {
         read: false,
@@ -184,6 +208,7 @@ export function NotificationProvider({ children }) {
 
   return (
     <NotificationContext.Provider value={value}>
+      <HazardAlertToasts notifications={popupNotifications} onDismiss={dismissPopup} />
       {children}
     </NotificationContext.Provider>
   );

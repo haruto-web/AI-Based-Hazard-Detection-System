@@ -22,8 +22,9 @@
 .detection-panel { display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 0.75rem; }
 .ppe-status-bar { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.5rem; }
 .ppe-pill { display: flex; flex-direction: column; gap: 0.15rem; padding: 0.45rem 0.55rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-secondary); }
-.ppe-pill.good { border-color: rgba(39, 174, 96, 0.6); background: rgba(39, 174, 96, 0.12); }
-.ppe-pill.warn { border-color: rgba(255, 142, 84, 0.7); background: rgba(255, 142, 84, 0.08); }
+.ppe-pill.good { border-color: var(--success); background: color-mix(in srgb, var(--success) 12%, transparent); }
+.ppe-pill.danger { border-color: var(--error); background: color-mix(in srgb, var(--error) 10%, transparent); }
+.ppe-pill.caution { border-color: var(--warning); background: color-mix(in srgb, var(--warning) 10%, transparent); }
 .ppe-pill-title { font-size: 0.7rem; color: var(--text-secondary); }
 .ppe-pill-state { font-size: 0.75rem; font-weight: 700; color: var(--text-primary); }
 .detection-summary-grid,
@@ -34,8 +35,12 @@
 .detection-risk-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .detection-debug-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .scaffolding-detections h4 { margin: 0 0 0.5rem; color: var(--text-primary); font-size: 0.8rem; }
-.scaffolding-hazard { border-color: rgba(255, 142, 84, 0.7); }
-.scaffolding-hazard .summary-value { color: #ff8d55; }
+.scaffolding-hazard { border-color: var(--error); background: color-mix(in srgb, var(--error) 8%, var(--bg-secondary)); }
+.scaffolding-hazard .summary-value,
+.risk-box.hazard-box strong { color: var(--error); }
+.detection-safe { border-color: var(--success); background: color-mix(in srgb, var(--success) 8%, var(--bg-secondary)); }
+.detection-safe .summary-value,
+.risk-box.compliant-box strong { color: var(--success); }
 
 .summary-card,
 .risk-box,
@@ -44,7 +49,6 @@
 .risk-label { display: block; font-size: 0.68rem; color: var(--text-secondary); margin-bottom: 0.18rem; }
 .summary-value,
 .risk-box strong { font-size: 1rem; color: var(--text-primary); }
-.risk-box.hazard-box strong { color: #ff8d55; }
 .debug-header { margin-bottom: 0.4rem; color: var(--text-primary); }
 .detection-debug-box em { color: var(--text-secondary); font-style: normal; }
 
