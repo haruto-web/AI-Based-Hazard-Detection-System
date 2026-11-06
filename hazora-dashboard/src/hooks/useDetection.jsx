@@ -1155,8 +1155,12 @@ export function useDetection(cameraIP, isConnected, siteLocation = '', userRole 
       const scheduleNext = (delay) => {
         timerRef.current = setTimeout(async () => {
           if (cancelled) return;
+          const detectionStartedAt = Date.now();
           await detectFrame();
-          if (!cancelled) scheduleNext(DETECTION_INTERVAL_MS);
+          if (!cancelled) {
+            const detectionDuration = Date.now() - detectionStartedAt;
+            scheduleNext(Math.max(0, DETECTION_INTERVAL_MS - detectionDuration));
+          }
         }, delay);
       };
       scheduleNext(0);
