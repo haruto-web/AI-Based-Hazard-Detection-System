@@ -4,38 +4,34 @@ import { buildStreamUrls } from '../AI/LM_detection/ppeDetection';
 import '../styles/StreamBox.css';
 
 export default function StreamBox({ id, label, cameraIP, onIPChange, isMain = false, onPromote }) {
-  const [status, setStatus] = useState('idle'); // 'idle' | 'loading' | 'connected' | 'failed'
-  const [inputValue, setInputValue] = useState('');
+  const [connectionState, setConnectionState] = useState({ cameraIP, status: 'idle' });
+  const [inputState, setInputState] = useState({ cameraIP, value: cameraIP || '' });
   const [error, setError] = useState(null);
-  const [streamUrlIndex, setStreamUrlIndex] = useState(0);
+  const [streamState, setStreamState] = useState({ cameraIP, index: 0 });
   const timeoutRef = useRef(null);
   const imgRef = useRef(null);
-
-  // Sync input with prop
-  useEffect(() => {
-    if (cameraIP) {
-      setInputValue(cameraIP);
-    }
-  }, [cameraIP]);
+  const status = connectionState.cameraIP === cameraIP
+    ? connectionState.status
+    : cameraIP ? 'loading' : 'idle';
+  const inputValue = inputState.cameraIP === cameraIP
+    ? inputState.value
+    : cameraIP || '';
+  const streamUrlIndex = streamState.cameraIP === cameraIP
+    ? streamState.index
+    : 0;
 
   // Handle connection when cameraIP changes
   useEffect(() => {
-    setStreamUrlIndex(0);
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
       timeoutRef.current = null;
     }
 
-    if (!cameraIP) {
-      setStatus('idle');
-      return;
-    }
-
-    setStatus('loading');
+    if (!cameraIP) return undefined;
 
     // 10-second timeout for connection failure
     timeoutRef.current = setTimeout(() => {
-      setStatus('failed');
+      setConnectionState({ cameraIP, status: 'failed' });
     }, 10000);
 
     return () => {
@@ -51,19 +47,19 @@ export default function StreamBox({ id, label, cameraIP, onIPChange, isMain = fa
       clearTimeout(timeoutRef.current);
       timeoutRef.current = null;
     }
-    setStatus('connected');
+    setConnectionState({ cameraIP, status: 'connected' });
   }
 
   function handleError() {
     if (streamUrlIndex < streamUrls.length - 1) {
-      setStreamUrlIndex((index) => index + 1);
+      setStreamState({ cameraIP, index: streamUrlIndex + 1 });
       return;
     }
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
       timeoutRef.current = null;
     }
-    setStatus('failed');
+    setConnectionState({ cameraIP, status: 'failed' });
   }
 
   function isUrl(value) {
@@ -87,7 +83,8 @@ export default function StreamBox({ id, label, cameraIP, onIPChange, isMain = fa
     if (!trimmed) {
       // Clear — disconnect
       onIPChange(id, '');
-      setStatus('idle');
+      setInputState({ cameraIP: '', value: '' });
+      setConnectionState({ cameraIP: '', status: 'idle' });
       return;
     }
 
@@ -104,8 +101,8 @@ export default function StreamBox({ id, label, cameraIP, onIPChange, isMain = fa
 
   function handleDisconnect() {
     onIPChange(id, '');
-    setInputValue('');
-    setStatus('idle');
+    setInputState({ cameraIP: '', value: '' });
+    setConnectionState({ cameraIP: '', status: 'idle' });
   }
 
   const streamUrls = buildStreamUrls(cameraIP);
@@ -161,9 +158,13 @@ export default function StreamBox({ id, label, cameraIP, onIPChange, isMain = fa
               <button
                 className="retry-btn"
                 onClick={() => {
-                  setStreamUrlIndex(0);
-                  setStatus('loading');
-                  timeoutRef.current = setTimeout(() => setStatus('failed'), 10000);
+                  setStreamState({ cameraIP, index: 0 });
+                  setConnectionState({ cameraIP, status: 'loading' });
+                  if (timeoutRef.current) clearTimeout(timeoutRef.current);
+                  timeoutRef.current = setTimeout(
+                    () => setConnectionState({ cameraIP, status: 'failed' }),
+                    10000,
+                  );
                 }}
               >
                 Retry
@@ -204,7 +205,10 @@ export default function StreamBox({ id, label, cameraIP, onIPChange, isMain = fa
           type="text"
           className="stream-box-ip-input"
           value={inputValue}
-          onChange={(e) => { setInputValue(e.target.value); setError(null); }}
+          onChange={(e) => {
+            setInputState({ cameraIP, value: e.target.value });
+            setError(null);
+          }}
           placeholder="IP or stream URL"
           disabled={status === 'loading'}
         />
