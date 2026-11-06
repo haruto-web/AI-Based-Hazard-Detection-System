@@ -79,10 +79,23 @@ export function computeByHour(incidents) {
   return buckets;
 }
 
+export function computeHazardBreakdown(incidents) {
+  const counts = incidents.reduce((byHazard, incident) => {
+    const hazardType = incident.hazardType || 'Unknown hazard';
+    byHazard[hazardType] = (byHazard[hazardType] || 0) + 1;
+    return byHazard;
+  }, {});
+
+  return Object.entries(counts)
+    .map(([hazardType, count]) => ({ hazardType, count }))
+    .sort((a, b) => b.count - a.count || a.hazardType.localeCompare(b.hazardType));
+}
+
 // A single summary object used across dashboard cards, PDF, and CSV.
 export function computeReportSummary(incidents) {
   const overall = computeOverallCompliance(incidents);
   const breakdown = computePpeBreakdown(incidents);
+  const hazardBreakdown = computeHazardBreakdown(incidents);
   const totalWorkers = sum(incidents, 'detectedWorkers');
   const totalCompliant = sum(incidents, 'compliant');
   const highRisk = incidents.filter((i) => ['high', 'critical'].includes(i.severity)).length;
@@ -93,11 +106,7 @@ export function computeReportSummary(incidents) {
     ? incidents.reduce((s, i) => s + (i.detectionConfidence || 0), 0) / incidents.length
     : 0;
 
-  const hazardCounts = incidents.reduce((counts, i) => {
-    counts[i.hazardType] = (counts[i.hazardType] || 0) + 1;
-    return counts;
-  }, {});
-  const topHazard = Object.entries(hazardCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/A';
+  const topHazard = hazardBreakdown[0]?.hazardType || 'N/A';
 
   const worstItem = [...breakdown].sort((a, b) => a.complianceRate - b.complianceRate)[0];
 
@@ -112,6 +121,7 @@ export function computeReportSummary(incidents) {
     avgConfidence,
     topHazard,
     breakdown,
+    hazardBreakdown,
     worstItem,
   };
 }

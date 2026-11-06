@@ -301,7 +301,27 @@ export default function ReportsPage({ readOnly = false }) {
           <span className="reports-summary-label">Resolved</span>
           <span className="reports-summary-value">{summary.resolved}</span>
         </div>
+        <div className="reports-summary-card">
+          <span className="reports-summary-label">Most frequent hazard</span>
+          <span className="reports-summary-value small">{summary.topHazard}</span>
+        </div>
       </div>
+
+      <section className="reports-hazard-breakdown" aria-labelledby="reports-hazard-breakdown-title">
+        <h3 id="reports-hazard-breakdown-title">Incidents by hazard</h3>
+        {summary.hazardBreakdown.length ? (
+          <div className="reports-hazard-grid">
+            {summary.hazardBreakdown.map(({ hazardType, count }) => (
+              <div className="reports-hazard-card" key={hazardType}>
+                <span>{hazardType}</span>
+                <strong>{count}</strong>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="reports-hazard-empty">No hazard incidents in this period.</p>
+        )}
+      </section>
 
       {/* Reports Table */}
       <div className="reports-table-wrapper">
@@ -378,6 +398,22 @@ export default function ReportsPage({ readOnly = false }) {
                   <span className="report-preview-bar-value">{item.complianceRate.toFixed(0)}%</span>
                 </div>
               ))}
+            </div>
+
+            <div className="report-preview-breakdown">
+              <h4>Incidents by hazard</h4>
+              {previewReport.summary.hazardBreakdown.length ? (
+                <div className="report-preview-hazard-list">
+                  {previewReport.summary.hazardBreakdown.map(({ hazardType, count }) => (
+                    <div className="report-preview-hazard-row" key={hazardType}>
+                      <span>{hazardType}</span>
+                      <strong>{count}</strong>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="reports-hazard-empty">No hazard incidents in this report.</p>
+              )}
             </div>
 
             <div className="report-preview-incidents">

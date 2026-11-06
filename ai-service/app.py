@@ -103,7 +103,7 @@ class TFLiteYoloModel:
         if not model_path.is_file():
             raise FileNotFoundError(f"Model file not found: {model_path}")
         self.labels = labels
-        self.interpreter = Interpreter(model_path=str(model_path), num_threads=2)
+        self.interpreter = Interpreter(model_path=str(model_path), num_threads=4)
         self.interpreter.allocate_tensors()
         self.input_detail = self.interpreter.get_input_details()[0]
         self.output_detail = self.interpreter.get_output_details()[0]

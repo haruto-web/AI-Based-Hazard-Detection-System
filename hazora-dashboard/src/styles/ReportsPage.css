@@ -99,6 +99,13 @@
 .reports-summary-label { font-size: 0.72rem; color: var(--text-secondary); }
 .reports-summary-value { font-size: 1.4rem; font-weight: 700; color: var(--text-primary); }
 .reports-summary-value.small { font-size: 0.95rem; }
+.reports-hazard-breakdown { padding: 1rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; }
+.reports-hazard-breakdown h3 { margin: 0 0 0.75rem; color: var(--text-primary); font-size: 0.95rem; }
+.reports-hazard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0.6rem; }
+.reports-hazard-card { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.75rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); }
+.reports-hazard-card span { color: var(--text-secondary); font-size: 0.8rem; }
+.reports-hazard-card strong { color: var(--text-primary); font-size: 1rem; }
+.reports-hazard-empty { margin: 0; color: var(--text-secondary); font-size: 0.8rem; }
 
 /* Report row actions */
 .report-actions { display: flex; gap: 0.4rem; }
@@ -122,6 +129,9 @@
 .report-preview-bar-track { flex: 1; height: 9px; border-radius: 5px; background: var(--bg-secondary); overflow: hidden; }
 .report-preview-bar-fill { display: block; height: 100%; background: var(--success); border-radius: 5px; }
 .report-preview-bar-value { width: 42px; text-align: right; font-size: 0.78rem; color: var(--text-primary); }
+.report-preview-hazard-list { display: flex; flex-direction: column; gap: 0.4rem; }
+.report-preview-hazard-row { display: flex; justify-content: space-between; gap: 0.75rem; padding: 0.5rem 0.65rem; border-radius: 6px; background: var(--bg-secondary); color: var(--text-secondary); font-size: 0.8rem; }
+.report-preview-hazard-row strong { color: var(--text-primary); }
 .report-preview-list { display: flex; flex-direction: column; gap: 0.65rem; max-height: 260px; overflow-y: auto; }
 .report-preview-item { background: var(--bg-secondary); border-radius: 8px; padding: 0.7rem 0.85rem; }
 .report-preview-item-head { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem; }

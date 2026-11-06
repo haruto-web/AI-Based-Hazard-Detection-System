@@ -5,6 +5,7 @@ import {
   computeComplianceTrend,
   computeByCamera,
   computeByHour,
+  computeHazardBreakdown,
   computeReportSummary,
 } from '../utils/analytics';
 
@@ -81,5 +82,27 @@ describe('analytics', () => {
     expect(summary.resolved).toBe(1);
     expect(summary.worstItem.item).toBe('Vest');
     expect(Math.round(summary.avgConfidence * 100)).toBe(70);
+  });
+
+  it('breaks down PPE and non-PPE incidents by hazard type', () => {
+    const reportIncidents = [
+      ...incidents,
+      { hazardType: 'Disorganized Material Handling' },
+      { hazardType: 'Disorganized Material Handling' },
+      { hazardType: 'Scaffolding Missing Base' },
+      { hazardType: 'Protruding Object' },
+    ];
+
+    expect(computeHazardBreakdown(reportIncidents)).toEqual([
+      { hazardType: 'Disorganized Material Handling', count: 2 },
+      { hazardType: 'Missing Hard Hat', count: 1 },
+      { hazardType: 'Missing Safety Vest', count: 1 },
+      { hazardType: 'Protruding Object', count: 1 },
+      { hazardType: 'Scaffolding Missing Base', count: 1 },
+    ]);
+
+    const summary = computeReportSummary(reportIncidents);
+    expect(summary.topHazard).toBe('Disorganized Material Handling');
+    expect(summary.hazardBreakdown).toHaveLength(5);
   });
 });
