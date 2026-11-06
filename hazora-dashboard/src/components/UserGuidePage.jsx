@@ -35,7 +35,7 @@ export default function UserGuidePage() {
           <ol>
             <li><strong>Dashboard:</strong> review the available safety and hazard summaries.</li>
             <li><strong>Live Streams:</strong> connect a camera using its IP address, then use the AI Detection controls to start or stop analysis.</li>
-            <li><strong>Incident Captures:</strong> review images saved when a hazard is reported.</li>
+            <li><strong>Incident Captures:</strong> review saved evidence or, with full gallery access, use <em>Add capture</em> to upload a historical image, enter its capture time and camera IP, choose a detection category, and record its counts.</li>
             <li><strong>Reports:</strong> view or export reports when your role allows it.</li>
             <li><strong>Messages:</strong> read notices or send messages where your role allows it.</li>
             <li><strong>Profile:</strong> check your account details, email verification, and password-reset options.</li>

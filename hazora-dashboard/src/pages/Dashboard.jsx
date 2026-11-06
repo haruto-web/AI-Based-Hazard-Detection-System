@@ -167,7 +167,7 @@ export default function Dashboard() {
             )}
 
             {activeView === 'gallery' && canAccess(userRole, 'gallery') && (
-              <GalleryPage userRole={userRole} />
+              <GalleryPage userRole={userRole} cameraIP={cameraIP} siteLocation={userSite} />
             )}
 
             {activeView === 'reports' && canAccess(userRole, 'reports') && (

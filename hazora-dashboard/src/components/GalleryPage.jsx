@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import {
   buildTrainingDataset,
+  createIncidentReport,
   deleteIncident,
   fetchTrainingDataset,
   getIncidents,
@@ -12,13 +13,117 @@ import { hasFullAccess } from '../config/roles';
 import '../styles/GalleryPage.css';
 
 const SITE_NOT_SET = 'Site location not set';
+const IMAGE_MAX_BYTES = 500 * 1024;
+const INITIAL_COUNTS = {
+  persons: 0,
+  helmets: 0,
+  noHelmets: 0,
+  vests: 0,
+  noVests: 0,
+  shoes: 0,
+  noShoes: 0,
+  compliant: 0,
+  standardScaffoldingBase: 0,
+  diagonalRidgerBrace: 0,
+  scaffolding: 0,
+  crossRidgeBrace: 0,
+  standardScaffoldingLadder: 0,
+  noBase: 0,
+  protrudingHazards: 0,
+  safetyCaps: 0,
+  organized: 0,
+  messy: 0,
+};
+
+const COUNT_FIELDS = {
+  ppe: [
+    ['persons', 'People'],
+    ['helmets', 'Safety helmets'],
+    ['noHelmets', 'Missing helmets'],
+    ['vests', 'Safety vests'],
+    ['noVests', 'Missing vests'],
+    ['shoes', 'Safety shoes'],
+    ['noShoes', 'Missing safety shoes'],
+    ['compliant', 'Compliant workers'],
+  ],
+  scaffolding: [
+    ['standardScaffoldingBase', 'Standard Scaffolding Base'],
+    ['diagonalRidgerBrace', 'Diagonal Ridger Brace'],
+    ['scaffolding', 'Scaffolding'],
+    ['crossRidgeBrace', 'CrossRidge Brace'],
+    ['standardScaffoldingLadder', 'Standard Scaffolding Ladder'],
+    ['noBase', 'No Base'],
+  ],
+  protruding: [
+    ['protrudingHazards', 'Protruding hazards'],
+    ['safetyCaps', 'Safety caps'],
+  ],
+  material: [
+    ['organized', 'Organized areas'],
+    ['messy', 'Messy areas'],
+  ],
+};
+
+const DETECTION_TYPES = {
+  ppe: { label: 'PPE detection', model: 'Manual PPE capture' },
+  scaffolding: { label: 'Scaffolding detection', model: 'Manual scaffolding capture' },
+  protruding: { label: 'Protruding hazard detection', model: 'Manual protruding hazard capture' },
+  material: { label: 'Material handling detection', model: 'Manual material capture' },
+};
+
+function toLocalDateTimeValue(date) {
+  const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return localDate.toISOString().slice(0, 16);
+}
+
+function loadCompressedImage(file) {
+  if (!file.type.startsWith('image/')) {
+    return Promise.reject(new Error('Choose an image file.'));
+  }
+
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      const canvas = document.createElement('canvas');
+      const scale = Math.min(1, 1280 / Math.max(image.naturalWidth, image.naturalHeight));
+      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+      const context = canvas.getContext('2d');
+      if (!context) {
+        reject(new Error('Could not process the selected image.'));
+        return;
+      }
+
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      let quality = 0.82;
+      let dataUrl = canvas.toDataURL('image/jpeg', quality);
+      while (dataUrl.length * 0.75 > IMAGE_MAX_BYTES && quality > 0.4) {
+        quality -= 0.1;
+        dataUrl = canvas.toDataURL('image/jpeg', quality);
+      }
+      if (dataUrl.length * 0.75 > IMAGE_MAX_BYTES) {
+        reject(new Error('This image is too large to store safely. Choose a smaller image.'));
+        return;
+      }
+      resolve(dataUrl);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error('Could not read the selected image.'));
+    };
+    image.src = objectUrl;
+  });
+}
 
 // Incident captures show images attached to detected incidents from supported streams.
 const SEVERITY_FILTERS = ['all', 'low', 'medium', 'high', 'critical'];
 
-export default function GalleryPage({ userRole }) {
+export default function GalleryPage({ userRole, cameraIP = '', siteLocation = '' }) {
   const { user } = useAuth();
   const canExportDataset = hasFullAccess(userRole, 'gallery');
+  const canAddCapture = hasFullAccess(userRole, 'gallery');
   const [incidents, setIncidents] = useState(() => getIncidents());
   const [selected, setSelected] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -27,6 +132,106 @@ export default function GalleryPage({ userRole }) {
   const [deleteError, setDeleteError] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [exportMessage, setExportMessage] = useState('');
+  const [showCaptureForm, setShowCaptureForm] = useState(false);
+  const [captureType, setCaptureType] = useState('ppe');
+  const [capturedAt, setCapturedAt] = useState(() => toLocalDateTimeValue(new Date()));
+  const [captureCamera, setCaptureCamera] = useState(cameraIP);
+  const [captureSite, setCaptureSite] = useState(siteLocation);
+  const [captureSeverity, setCaptureSeverity] = useState('low');
+  const [captureCounts, setCaptureCounts] = useState(INITIAL_COUNTS);
+  const [captureImage, setCaptureImage] = useState('');
+  const [captureImageName, setCaptureImageName] = useState('');
+  const [captureError, setCaptureError] = useState('');
+  const [savingCapture, setSavingCapture] = useState(false);
+
+  function resetCaptureForm() {
+    setShowCaptureForm(false);
+    setCaptureError('');
+    setCaptureImage('');
+    setCaptureImageName('');
+    setCapturedAt(toLocalDateTimeValue(new Date()));
+    setCaptureCamera(cameraIP);
+    setCaptureSite(siteLocation);
+    setCaptureCounts(INITIAL_COUNTS);
+    setCaptureType('ppe');
+    setCaptureSeverity('low');
+  }
+
+  async function handleCaptureImageChange(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setCaptureError('');
+    try {
+      const imageData = await loadCompressedImage(file);
+      setCaptureImage(imageData);
+      setCaptureImageName(file.name);
+    } catch (error) {
+      setCaptureImage('');
+      setCaptureImageName('');
+      setCaptureError(error.message || 'Could not process the selected image.');
+    }
+  }
+
+  async function handleCreateCapture(event) {
+    event.preventDefault();
+    setCaptureError('');
+    if (!captureImage) {
+      setCaptureError('Select a capture image before saving.');
+      return;
+    }
+    if (!capturedAt || !Number.isFinite(new Date(capturedAt).getTime())) {
+      setCaptureError('Enter a valid capture date and time.');
+      return;
+    }
+    if (!captureCamera.trim()) {
+      setCaptureError('Enter the ESP32 camera IP or address.');
+      return;
+    }
+
+    const countSummary = COUNT_FIELDS[captureType]
+      .map(([key, label]) => `${label}: ${captureCounts[key]}`)
+      .join('; ');
+    const hazardType = DETECTION_TYPES[captureType].label;
+    const description = `${hazardType} counts — ${countSummary}.`;
+    const detectionCounts = Object.fromEntries(
+      COUNT_FIELDS[captureType].map(([key]) => [key, captureCounts[key]]),
+    );
+
+    setSavingCapture(true);
+    try {
+      const incident = await createIncidentReport({
+        userId: user?.uid,
+        hazardType,
+        hazardCode: `${captureType}_detection`,
+        description,
+        precautions: '',
+        cameraSource: captureCamera.trim(),
+        severity: captureSeverity,
+        detectionConfidence: 0,
+        model: DETECTION_TYPES[captureType].model,
+        detectedWorkers: captureCounts.persons || 0,
+        helmets: captureCounts.helmets,
+        noHelmets: captureCounts.noHelmets,
+        vests: captureCounts.vests,
+        noVests: captureCounts.noVests,
+        shoes: captureCounts.shoes,
+        noShoes: captureCounts.noShoes,
+        compliant: captureCounts.compliant,
+        imageData: captureImage,
+        site: captureSite.trim(),
+        capturedAt: new Date(capturedAt),
+        detectionCounts,
+        requireFirestore: true,
+      });
+      setIncidents((current) => [incident, ...current.filter((item) => item.id !== incident.id)]);
+      resetCaptureForm();
+    } catch (error) {
+      console.error('Could not save historical incident capture:', error);
+      setCaptureError(error.message || 'Could not save this capture. Please try again.');
+    } finally {
+      setSavingCapture(false);
+    }
+  }
 
   async function handleDelete(capture) {
     setDeleting(true);
@@ -150,6 +355,20 @@ export default function GalleryPage({ userRole }) {
           </p>
         </div>
         <div className="gallery-header-actions">
+          {canAddCapture && (
+            <button
+              type="button"
+              className="gallery-add-capture-btn"
+              onClick={() => {
+                setCaptureError('');
+                setCaptureCamera(cameraIP);
+                setCaptureSite(siteLocation);
+                setShowCaptureForm(true);
+              }}
+            >
+              Add capture
+            </button>
+          )}
           {canExportDataset && (
             <button type="button" className="gallery-export-btn" onClick={handleExportDataset}>
               Export validated dataset ({validatedCount})
@@ -161,6 +380,141 @@ export default function GalleryPage({ userRole }) {
         </div>
       </div>
       {exportMessage && <p className="gallery-feedback" role="status">{exportMessage}</p>}
+      {showCaptureForm && (
+        <div className="gallery-overlay" onClick={() => {
+          if (!savingCapture) resetCaptureForm();
+        }}>
+          <form
+            className="gallery-capture-form"
+            onSubmit={handleCreateCapture}
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="gallery-capture-title"
+          >
+            <div className="gallery-modal-header">
+              <h3 id="gallery-capture-title">Add historical capture</h3>
+              <button
+                type="button"
+                className="gallery-modal-close"
+                onClick={resetCaptureForm}
+                aria-label="Close"
+                disabled={savingCapture}
+              >
+                ✕
+              </button>
+            </div>
+            <p className="gallery-capture-help">
+              Upload the evidence image, enter when it was captured, and record the detections. The capture will be saved to the incidents collection.
+            </p>
+            <label className="gallery-form-field">
+              Capture image
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleCaptureImageChange}
+                required={!captureImage}
+                disabled={savingCapture}
+              />
+              <span className="gallery-form-hint">
+                {captureImageName ? `${captureImageName} (compressed for Firestore)` : 'Required; images are resized and compressed before upload.'}
+              </span>
+            </label>
+            {captureImage && (
+              <img className="gallery-capture-preview" src={captureImage} alt="Selected capture preview" />
+            )}
+            <div className="gallery-form-grid">
+              <label className="gallery-form-field">
+                Capture date and time
+                <input
+                  type="datetime-local"
+                  value={capturedAt}
+                  onChange={(event) => setCapturedAt(event.target.value)}
+                  required
+                  disabled={savingCapture}
+                />
+              </label>
+              <label className="gallery-form-field">
+                ESP32 camera IP or address
+                <input
+                  type="text"
+                  value={captureCamera}
+                  onChange={(event) => setCaptureCamera(event.target.value)}
+                  placeholder="e.g. 192.168.55.122"
+                  required
+                  disabled={savingCapture}
+                />
+              </label>
+              <label className="gallery-form-field">
+                Site (optional)
+                <input
+                  type="text"
+                  value={captureSite}
+                  onChange={(event) => setCaptureSite(event.target.value)}
+                  placeholder="Site name"
+                  disabled={savingCapture}
+                />
+              </label>
+              <label className="gallery-form-field">
+                Detection category
+                <select
+                  value={captureType}
+                  onChange={(event) => setCaptureType(event.target.value)}
+                  disabled={savingCapture}
+                >
+                  {Object.entries(DETECTION_TYPES).map(([key, type]) => (
+                    <option key={key} value={key}>{type.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="gallery-form-field">
+                Severity
+                <select
+                  value={captureSeverity}
+                  onChange={(event) => setCaptureSeverity(event.target.value)}
+                  disabled={savingCapture}
+                >
+                  {SEVERITY_FILTERS.filter((level) => level !== 'all').map((level) => (
+                    <option key={level} value={level}>{level.charAt(0).toUpperCase() + level.slice(1)}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <fieldset className="gallery-count-fields">
+              <legend>Detection counts</legend>
+              {COUNT_FIELDS[captureType].map(([key, label]) => (
+                <label key={key} className="gallery-form-field">
+                  {label}
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={captureCounts[key]}
+                    onChange={(event) => {
+                      const value = Number(event.target.value);
+                      setCaptureCounts((current) => ({
+                        ...current,
+                        [key]: Number.isFinite(value) && value >= 0 ? Math.floor(value) : 0,
+                      }));
+                    }}
+                    required
+                    disabled={savingCapture}
+                  />
+                </label>
+              ))}
+            </fieldset>
+            {captureError && <p className="gallery-form-error" role="alert">{captureError}</p>}
+            <div className="gallery-form-actions">
+              <button type="button" className="gallery-form-cancel" onClick={resetCaptureForm} disabled={savingCapture}>
+                Cancel
+              </button>
+              <button type="submit" className="gallery-add-capture-btn" disabled={savingCapture}>
+                {savingCapture ? 'Saving…' : 'Save capture'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
       {/* Search + severity filters */}
       <div className="gallery-controls">
         <div className="gallery-search">
@@ -196,9 +550,9 @@ export default function GalleryPage({ userRole }) {
 
       {captures.length === 0 ? (
         <div className="gallery-empty">
-          <p>No violation captures yet.</p>
+          <p>No incident captures yet.</p>
           <p className="gallery-empty-hint">
-            When the AI detects a worker missing PPE on a connected camera, the frame is saved here automatically.
+            Captured images appear here when hazards are detected or when an authorized user adds a historical capture.
           </p>
         </div>
       ) : filtered.length === 0 ? (

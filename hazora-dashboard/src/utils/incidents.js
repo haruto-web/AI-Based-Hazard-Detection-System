@@ -1,5 +1,6 @@
 import { jsPDF } from 'jspdf';
 import {
+  Timestamp,
   collection,
   getDocs,
   limit,
@@ -217,13 +218,27 @@ export async function createIncidentReport({
   imageData = '',
   faceData = '',
   site = '',
+  capturedAt,
+  detectionCounts = {},
+  requireFirestore = false,
 }) {
   const now = new Date();
+  const captureDate = capturedAt == null
+    ? now
+    : capturedAt instanceof Date
+      ? new Date(capturedAt.getTime())
+      : typeof capturedAt === 'string'
+        ? new Date(capturedAt)
+        : null;
+  if (!captureDate || !Number.isFinite(captureDate.getTime())) {
+    throw new TypeError('capturedAt must be a valid Date or date string');
+  }
+
   const incident = normalizeIncident({
     id: `${now.getTime()}-${Math.random().toString(36).slice(2, 8)}`,
-    timestamp: now.toISOString(),
-    date: now.toLocaleDateString(),
-    time: now.toLocaleTimeString(),
+    timestamp: captureDate.toISOString(),
+    date: captureDate.toLocaleDateString(),
+    time: captureDate.toLocaleTimeString(),
     hazardType,
     hazardCode,
     description,
@@ -244,10 +259,10 @@ export async function createIncidentReport({
     imageData,
     faceData,
     site,
+    detectionCounts,
   });
 
   const incidents = [incident, ...readStoredIncidents()].slice(0, 500);
-  writeStoredIncidents(incidents);
 
   // Write to the shared top-level "incidents" collection so the website's
   // live-stream captures land in the same place the mobile app writes to, and
@@ -267,13 +282,19 @@ export async function createIncidentReport({
       prevention: incident.precautions || '',
       confidence: incident.detectionConfidence || 0,
       // Store the app-compatible timestamp too so ordering works across both.
-      timestamp: serverTimestamp(),
+      timestamp: Timestamp.fromDate(captureDate),
       createdAt: serverTimestamp(),
     });
   } catch (err) {
     console.warn('Failed to save incident to Firestore:', err.message);
+    if (requireFirestore) {
+      throw new Error('Could not save this capture to Firestore. Check your connection and permissions, then try again.', {
+        cause: err,
+      });
+    }
   }
 
+  writeStoredIncidents(incidents);
   return incident;
 }
 
