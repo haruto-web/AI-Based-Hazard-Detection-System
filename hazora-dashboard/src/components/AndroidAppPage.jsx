@@ -3,7 +3,7 @@ import QRCode from 'qrcode';
 import '../styles/AndroidAppPage.css';
 
 const downloadUrl = import.meta.env.VITE_ANDROID_APP_DOWNLOAD_URL?.trim() || '';
-const cameraAppDownloadUrl = 'https://github.com/haruto-web/Hazora-Mobile-Camera/releases';
+const cameraAppDownloadUrl = import.meta.env.VITE_ANDROID_CAMERA_APP_DOWNLOAD_URL?.trim() || '';
 
 function getValidDownloadUrl(value) {
   try {
@@ -132,14 +132,14 @@ export default function AndroidAppPage() {
       <AppDownloadCard
         downloadUrl={cameraAppDownloadUrl}
         title="Android camera application"
-        qrAlt="QR code linking to Hazora Camera app releases"
-        caption="Scan with your phone camera to open the camera app releases."
+        qrAlt="QR code linking to download the Hazora Camera Android app"
+        caption="Scan with your phone camera to download the Hazora Camera app."
         description={[
-          'Scan the QR code or open the releases page on your Android device, then download the camera app APK from the latest pre-release.',
+          'Scan the QR code or open this link on your Android device to download the v1.1.0 pre-release APK. Android may ask you to allow app installation from your browser.',
           'Install the app, connect your phone and the website to the same Wi-Fi network, then start the camera and enter its displayed IP address on the website.',
         ]}
-        linkLabel="View camera app releases"
-        unavailableMessage="The camera app releases page is not available."
+        linkLabel="Download HAZORA Camera"
+        unavailableMessage="The camera app download is not available."
       />
     </section>
   );
