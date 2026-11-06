@@ -43,9 +43,9 @@ class SummarizeResultsTests(unittest.TestCase):
 
         counts, alerts = _summarize_results(ppe_result)
 
-        self.assertEqual(counts["helmets"], 0)
+        self.assertEqual(counts["helmets"], 1)
         self.assertEqual(counts["vests"], 0)
-        self.assertEqual(alerts, [])
+        self.assertEqual([alert["label"] for alert in alerts], ["Safety Helmet"])
 
     def test_autocontrasts_underexposed_frames_only(self):
         dark = Image.new("RGB", (100, 1))
@@ -216,6 +216,53 @@ class SummarizeHazardResultsTests(unittest.TestCase):
         self.assertEqual(counts, {"Organized": 1, "Messy": 1})
         self.assertEqual([alert["label"] for alert in alerts], ["Messy"])
         self.assertEqual(alerts[0]["confidence"], 0.3)
+
+    def test_scaffolding_uses_the_20_percent_threshold_for_inference_and_counts(self):
+        result = SimpleNamespace(
+            boxes=[
+                detection(5, [10, 10, 30, 30], confidence=0.2),
+                detection(5, [40, 40, 70, 70], confidence=0.19),
+            ],
+            names={5: "No Base"},
+        )
+        model_thresholds = []
+
+        def fake_model(_image, conf):
+            model_thresholds.append(conf)
+            return [result]
+
+        with (
+            patch.dict(
+                app.HAZARD_MODEL_CONFIG,
+                {
+                    "scaffolding": {
+                        "path": app.Path("scaffolding.tflite"),
+                        "labels": [
+                            "Standard Scaffolding Base",
+                            "Diagonal Ridger Brace",
+                            "Scaffolding",
+                            "CrossRidge Brace",
+                            "Standard Scaffolding Ladder",
+                            "No Base",
+                        ],
+                        "reportable": {"No Base"},
+                        "confidence_threshold": 0.2,
+                    }
+                },
+                clear=True,
+            ),
+            patch.object(app, "_load_hazard_model", return_value=fake_model),
+        ):
+            detections, alerts, errors = app._detect_hazards(
+                Image.new("RGB", (20, 20)),
+                active_detectors=("scaffolding",),
+            )
+
+        self.assertEqual(model_thresholds, [0.2])
+        self.assertEqual(detections["scaffoldingClasses"]["No Base"], 1)
+        self.assertEqual(detections["noBase"], 1)
+        self.assertEqual([alert["label"] for alert in alerts], ["No Base"])
+        self.assertEqual(errors, {})
 
     def test_uses_the_model_class_order_when_names_are_missing(self):
         result = SimpleNamespace(

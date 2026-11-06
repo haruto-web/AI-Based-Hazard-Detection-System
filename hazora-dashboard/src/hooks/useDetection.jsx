@@ -628,6 +628,7 @@ export function useDetection(cameraIP, isConnected, siteLocation = '', userRole 
     const now = Date.now();
     if (inferenceInFlightRef.current || !canvasRef.current) return;
     if (now - lastDetectionStartedAtRef.current < DETECTION_INTERVAL_MS) return;
+    const enabledDetectors = activeDetectors || AVAILABLE_DETECTORS;
 
     let backendHandled = false;
     if (AI_SERVICE_URL) {
@@ -647,7 +648,7 @@ export function useDetection(cameraIP, isConnected, siteLocation = '', userRole 
       return;
     }
 
-    if (!backendHandled && !ppeModel) {
+    if (enabledDetectors.includes('ppe') && !ppeModel) {
       try {
         await loadModels();
       } catch {
@@ -655,10 +656,10 @@ export function useDetection(cameraIP, isConnected, siteLocation = '', userRole 
       }
     }
 
-    if (!backendHandled && !ppeModel) return;
-    if (!scaffoldingModel) loadScaffoldingModel().catch(() => {});
-    if (!protrudingModel) loadProtrudingModel().catch(() => {});
-    if (!materialModel) loadMaterialModel().catch(() => {});
+    if (enabledDetectors.includes('ppe') && !ppeModel) return;
+    if (enabledDetectors.includes('scaffolding') && !scaffoldingModel) loadScaffoldingModel().catch(() => {});
+    if (enabledDetectors.includes('protruding') && !protrudingModel) loadProtrudingModel().catch(() => {});
+    if (enabledDetectors.includes('material') && !materialModel) loadMaterialModel().catch(() => {});
 
     lastDetectionStartedAtRef.current = now;
 
@@ -685,31 +686,33 @@ export function useDetection(cameraIP, isConnected, siteLocation = '', userRole 
       canvas.height = image.naturalHeight;
       ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
 
-      const shouldRefreshPersons = !backendHandled && personModel &&
+      const shouldRefreshPersons = enabledDetectors.includes('ppe') && personModel &&
         Date.now() - lastPersonDetectionAtRef.current >= PERSON_DETECTION_INTERVAL_MS;
       let scaffoldingDetectionError = null;
       let protrudingDetectionError = null;
       let materialDetectionError = null;
       const [ppeObjects, refreshedPersons, scaffoldingObjects, protrudingObjects, materialObjects] = await Promise.all([
-        backendHandled ? Promise.resolve([]) : detectPpeObjects({ ppeModel, canvas }),
+        enabledDetectors.includes('ppe')
+          ? detectPpeObjects({ ppeModel, canvas })
+          : Promise.resolve([]),
         shouldRefreshPersons
           ? detectPersons({ personModel, canvas })
           : Promise.resolve(null),
-        scaffoldingModel
+        enabledDetectors.includes('scaffolding') && scaffoldingModel
           ? detectScaffoldingObjects({ scaffoldingModel, canvas }).catch((err) => {
             scaffoldingDetectionError = err;
             console.error('Scaffolding detection frame failed:', err);
             return null;
           })
           : Promise.resolve(null),
-        protrudingModel
+        enabledDetectors.includes('protruding') && protrudingModel
           ? detectProtrudingObjects({ protrudingModel, canvas }).catch((err) => {
             protrudingDetectionError = err;
             console.error('Protruding hazard detection frame failed:', err);
             return null;
           })
           : Promise.resolve(null),
-        materialModel
+        enabledDetectors.includes('material') && materialModel
           ? detectMaterialObjects({ materialModel, canvas }).catch((err) => {
             materialDetectionError = err;
             console.error('Material-handling detection frame failed:', err);
@@ -742,7 +745,7 @@ export function useDetection(cameraIP, isConnected, siteLocation = '', userRole 
       );
       const messyMaterials = materialClasses.Messy;
 
-      if (scaffoldingModel && !scaffoldingDetectionError) {
+      if (enabledDetectors.includes('scaffolding') && scaffoldingModel && !scaffoldingDetectionError) {
         setDetections((previous) => ({
           ...previous,
           scaffoldingClasses,
@@ -808,7 +811,7 @@ export function useDetection(cameraIP, isConnected, siteLocation = '', userRole 
         }
       }
 
-      if (protrudingModel && !protrudingDetectionError) {
+      if (enabledDetectors.includes('protruding') && protrudingModel && !protrudingDetectionError) {
         setDetections((previous) => ({
           ...previous,
           protrudingClasses,
@@ -866,7 +869,7 @@ export function useDetection(cameraIP, isConnected, siteLocation = '', userRole 
         }
       }
 
-      if (materialModel && !materialDetectionError) {
+      if (enabledDetectors.includes('material') && materialModel && !materialDetectionError) {
         setDetections((previous) => ({
           ...previous,
           materialClasses,
@@ -1118,6 +1121,7 @@ export function useDetection(cameraIP, isConnected, siteLocation = '', userRole 
       inferenceInFlightRef.current = false;
     }
   }, [
+    activeDetectors,
     ppeModel,
     scaffoldingModel,
     protrudingModel,

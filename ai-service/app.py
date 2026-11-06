@@ -29,6 +29,7 @@ PPE_LABELS = [
     "No Safety Shoes",
 ]
 YOLO_IOU_THRESHOLD = 0.70
+SCAFFOLDING_CONFIDENCE_THRESHOLD = 0.20
 HAZARD_MODEL_CONFIG = {
     "scaffolding": {
         "path": Path(os.environ.get("AI_SCAFFOLDING_MODEL_PATH") or ROOT_DIR / "hazora-dashboard" / "public" / "models" / "scaffolding" / "scaffolding1.tflite"),
@@ -41,6 +42,7 @@ HAZARD_MODEL_CONFIG = {
             "No Base",
         ],
         "reportable": {"No Base"},
+        "confidence_threshold": SCAFFOLDING_CONFIDENCE_THRESHOLD,
     },
     "protruding": {
         "path": Path(os.environ.get("AI_PROTRUDING_MODEL_PATH") or ROOT_DIR / "hazora-dashboard" / "public" / "models" / "protruding" / "protruding.tflite"),
@@ -76,7 +78,7 @@ DETECTOR_DISPLAY_NAMES = {
     "protruding": "Protruding hazard",
     "material": "Material handling",
 }
-PPE_CONFIDENCE_THRESHOLD = 0.35
+PPE_CONFIDENCE_THRESHOLD = 0.20
 HAZARD_CONFIDENCE_THRESHOLD = 0.30
 PPE_CLASS_CONFIDENCE_THRESHOLDS = {
     "helmet": PPE_CONFIDENCE_THRESHOLD,
@@ -399,14 +401,19 @@ def _detect_hazards(image, active_detectors=ACTIVE_DETECTORS):
                 continue
 
             try:
+                confidence_threshold = config.get(
+                    "confidence_threshold",
+                    HAZARD_CONFIDENCE_THRESHOLD,
+                )
                 result = model(
                     image,
-                    conf=HAZARD_CONFIDENCE_THRESHOLD,
+                    conf=confidence_threshold,
                 )[0]
                 counts, model_alerts = _summarize_hazard_results(
                     result,
                     config["labels"],
                     config["reportable"],
+                    confidence_threshold=confidence_threshold,
                 )
             except Exception as exc:
                 model_errors[name] = str(exc)
