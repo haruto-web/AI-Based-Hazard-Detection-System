@@ -106,6 +106,14 @@ export default function TopNavBar({ userEmail, onLogout, onNavigateProfile, onNa
     return date.toLocaleString();
   }
 
+  function getNotificationSeverityClass(severity) {
+    if (severity === 'critical') return 'severity-critical';
+    if (severity === 'high') return 'severity-high';
+    if (severity === 'medium') return 'severity-medium';
+    if (severity === 'low') return 'severity-low';
+    return '';
+  }
+
   return (
     <div className="top-nav-bar">
       <div className="top-nav-left">
@@ -203,7 +211,7 @@ export default function TopNavBar({ userEmail, onLogout, onNavigateProfile, onNa
                   notifications.slice(0, 20).map((notif) => (
                     <button
                       key={notif.id}
-                      className={`notif-item ${!notif.read ? 'unread' : ''}`}
+                      className={`notif-item ${getNotificationSeverityClass(notif.severity)} ${!notif.read ? 'unread' : ''}`.trim()}
                       onClick={() => handleNotificationClick(notif)}
                     >
                       <div className="notif-item-content">

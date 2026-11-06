@@ -33,6 +33,7 @@ afterEach(() => {
 describe('createIncidentReport', () => {
   it('preserves a supplied capture time in the incident and Firestore document', async () => {
     const capturedAt = '2026-11-06T11:04:00+08:00';
+    const imageData = 'data:image/jpeg;base64,/9j/4AAQ';
 
     const incident = await createIncidentReport({
       hazardType: 'Scaffolding detection',
@@ -41,9 +42,11 @@ describe('createIncidentReport', () => {
       severity: 'low',
       capturedAt,
       detectionCounts: { standardScaffoldingBase: 6, noBase: 0 },
+      imageData,
     });
 
     expect(incident.timestamp).toBe('2026-11-06T03:04:00.000Z');
+    expect(incident.imageData).toBe(imageData);
     expect(incident.time).toBe(new Date(capturedAt).toLocaleTimeString());
     expect(firestoreMocks.timestampFromDate).toHaveBeenCalledWith(new Date(capturedAt));
     expect(firestoreMocks.setDoc).toHaveBeenCalledWith(
@@ -52,8 +55,10 @@ describe('createIncidentReport', () => {
         timestamp: expect.objectContaining({ toDate: expect.any(Function) }),
         createdAt: 'server-timestamp',
         detectionCounts: { standardScaffoldingBase: 6, noBase: 0 },
+        imageData,
       }),
     );
+    expect(JSON.parse(localStorage.getItem('hazora_incidents'))[0].imageData).toBe(imageData);
   });
 
   it('rejects an invalid capture time before saving the incident', async () => {

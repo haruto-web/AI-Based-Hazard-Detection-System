@@ -244,6 +244,48 @@
   background: var(--accent-bg);
 }
 
+.notif-item.severity-critical,
+.notif-item.severity-high {
+  border-left: 4px solid var(--error);
+  background: color-mix(in srgb, var(--error) 10%, var(--bg-card));
+}
+
+.notif-item.severity-critical .notif-type,
+.notif-item.severity-high .notif-type {
+  color: var(--error);
+}
+
+.notif-item.severity-medium {
+  border-left: 4px solid var(--warning);
+  background: color-mix(in srgb, var(--warning) 12%, var(--bg-card));
+}
+
+.notif-item.severity-medium .notif-type {
+  color: var(--warning);
+}
+
+.notif-item.severity-low {
+  border-left: 4px solid var(--success);
+  background: color-mix(in srgb, var(--success) 10%, var(--bg-card));
+}
+
+.notif-item.severity-low .notif-type {
+  color: var(--success);
+}
+
+.notif-item.severity-critical:hover,
+.notif-item.severity-high:hover {
+  background: color-mix(in srgb, var(--error) 16%, var(--bg-card));
+}
+
+.notif-item.severity-medium:hover {
+  background: color-mix(in srgb, var(--warning) 18%, var(--bg-card));
+}
+
+.notif-item.severity-low:hover {
+  background: color-mix(in srgb, var(--success) 16%, var(--bg-card));
+}
+
 .notif-item-content {
   display: flex;
   align-items: center;

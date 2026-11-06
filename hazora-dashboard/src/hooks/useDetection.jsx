@@ -449,9 +449,16 @@ export function useDetection(cameraIP, isConnected, siteLocation = '', userRole 
         const key = `${cameraIP}:${issue.item}`;
         return Date.now() - (backendAlertRef.current[key] || 0) >= 60000;
       });
-      const captureFrameImage = needsEvidence
-        ? await captureFaceEvidence(captureUrl)
-        : '';
+      let captureFrameImage = '';
+      let faceImageData = '';
+      if (needsEvidence) {
+        try {
+          captureFrameImage = await captureFullFrameImage(captureUrl);
+        } catch (error) {
+          console.warn('Could not capture full-frame evidence for backend PPE hazard:', error?.message || error);
+        }
+        faceImageData = await captureFaceEvidence(captureUrl);
+      }
 
       for (const issue of backendIssues) {
         const key = `${cameraIP}:${issue.item}`;
@@ -467,10 +474,10 @@ export function useDetection(cameraIP, isConnected, siteLocation = '', userRole 
           cameraSource: cameraIP,
         });
 
-        const duplicateFace = captureFrameImage && getIncidents().some((incident) => {
+        const duplicateFace = faceImageData && getIncidents().some((incident) => {
           const sameCamera = (incident.cameraSource || '').includes(cameraIP);
           const sameHazard = (incident.hazardType || '').toLowerCase() === report.hazardType.toLowerCase();
-          const sameFace = incident.faceData && incident.faceData === captureFrameImage;
+          const sameFace = incident.faceData && incident.faceData === faceImageData;
           const sameSite = !siteForIncident || !incident.site || incident.site === siteForIncident;
           return sameCamera && sameHazard && sameFace && sameSite;
         });
@@ -504,8 +511,8 @@ export function useDetection(cameraIP, isConnected, siteLocation = '', userRole 
           noVests: issue.item === 'Safety Vest' ? issue.count : 0,
           shoes: detections.shoes || 0,
           noShoes: issue.item === 'Safety Shoes' ? issue.count : 0,
-          imageData: captureFrameImage || '',
-          faceData: captureFrameImage || '',
+          imageData: captureFrameImage || faceImageData,
+          faceData: faceImageData,
           site: siteForIncident,
         });
 
